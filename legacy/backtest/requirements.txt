@@ -1,0 +1,6 @@
+# Extra dependencies for backtest/ scripts only -- kept separate from the
+# top-level requirements.txt so the live trading bot's dependency footprint never
+# needs these.
+scikit-learn>=1.4,<2
+joblib>=1.3,<2
+scipy>=1.11,<2   # Black-Scholes normal CDF in options_pricing.py

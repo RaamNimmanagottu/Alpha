@@ -1,0 +1,26 @@
+[Unit]
+Description=Alpha NIFTY intraday trading bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+# EDIT THESE THREE FOR YOUR VM:
+User=alpha
+WorkingDirectory=/opt/alpha
+ExecStart=/opt/alpha/.venv/bin/python /opt/alpha/main.py
+
+# Restart only on a genuine crash (non-zero exit), not on the bot's own normal
+# exit (holiday, weekend, or market-closed -- those return exit code 0). Without
+# this distinction, systemd would restart the bot in a tight loop every time it
+# exits cleanly because there's nothing to trade today.
+Restart=on-failure
+RestartSec=30
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=alpha
+
+[Install]
+WantedBy=multi-user.target

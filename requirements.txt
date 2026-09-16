@@ -1,0 +1,15 @@
+cx_Freeze>=8.5,<9    # needed to run setup.py itself, to build the single-executable bundle
+                     # (8.5+ specifically -- earlier versions crash on Python 3.13/Windows:
+                     # they unconditionally import the stdlib msilib module, which Python
+                     # 3.13 removed; confirmed 8.7.0 works, 7.2.10 does not)
+smartapi-python==1.4.8
+logzero>=1.7,<2
+pyotp==2.8.0
+pandas>=2.2,<3
+numpy>=1.26,<3
+requests>=2.31,<3
+websocket-client>=1.6,<2
+colorama>=0.4,<1
+python-dotenv>=1.0,<2
+PyYAML>=6.0,<7
+openpyxl>=3.1,<4

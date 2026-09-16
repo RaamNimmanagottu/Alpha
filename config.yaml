@@ -1,0 +1,97 @@
+# Non-secret configuration for the trading bot.
+# Secrets (API key, client code, PIN, TOTP secret) live in .env — never in this file.
+
+poll_interval_seconds: 3       # how often the main loop re-evaluates each instrument
+order_fill_timeout_seconds: 15 # how long to wait/poll for a placed order to confirm before giving up
+order_fill_poll_seconds: 1
+
+# PAPER TRADING: no real orders are placed while this is true -- entries/exits are
+# simulated using live LTP and recorded exactly like real trades (same store, same
+# risk manager, same signal logic), so the whole system gets exercised faithfully.
+# Recommended: run this for ~30 days, review data/trades.db (or the Excel export --
+# tools/export_trades_to_excel.py), and only THEN flip this to false by hand. There
+# is no automatic graduation to real money anywhere in this codebase.
+paper_trading: true
+
+# VM cost savings: on a Linux VM that's meant to auto-start each morning, this
+# powers the machine off after any clean exit (holiday, weekend, or market closed
+# for the day) -- so it doesn't sit running (and billing) the rest of the day.
+# Never fires on an error exit (e.g. broker connect failure), so there's a window
+# to look at what went wrong first. Leave false on your own dev machine -- only
+# turn this on on the actual deployed VM. Requires passwordless sudo for the
+# `shutdown` command for whichever user runs this (see deploy/README.md).
+shutdown_vm_on_exit: false
+
+risk:
+  daily_loss_limit: 5000       # rupees; bot stops opening new trades once breached
+  max_trades_per_day: 6        # across all instruments combined
+  max_trades_per_instrument: 3
+
+# Local historical-candle cache used to compute the EMA(9)/EMA(21) crossover signal
+# ourselves from real broker data. Stored as one Excel file per instrument under
+# storage_dir. See alpha/historical_data.py and alpha/ema_crossover_signal.py.
+historical_data:
+  interval: "FIVE_MINUTE"       # Angel One getCandleData interval string
+  interval_minutes: 5           # must match `interval` above -- used to throttle re-fetches
+  lookback_days: 100            # size of the initial backfill; confirmed to work in one request
+  storage_dir: "data/historical"
+
+# Strategy: EMA(9)/EMA(21) crossover on 5-minute candles (alpha/ema_crossover_signal.py).
+# Backtested as the single best performer out of 23 strategies/variants tested on
+# 1000 days of NIFTY data (backtest/run_strategy_comparison.py): 6,350 points total,
+# 46.8% win rate, unfiltered -- no support/resistance gate, no ADX/trend filter,
+# since the raw crossover was what actually won. Only NIFTY is live -- BANKNIFTY was
+# never backtested with this strategy and is deliberately left out until it is.
+instruments:
+  - name: NIFTY
+    exchange_index_symbol: NIFTY
+    index_token: "99926000"          # used for LTP quotes
+    candle_token: "99926000"         # used for historical candle data (getCandleData)
+    lot_size: 65                # NSE lot size as of 2026 -- verify before every expiry cycle, NSE revises periodically
+    quantity_lots: 1
+    buy_strike_offset: 0        # ATM -- matches the ATM assumption used throughout backtesting
+    sell_strike_offset: 0
+    take_profit_points: 100     # points of INDEX movement, not option premium % -- matches the backtest exactly
+    stop_loss_points: 50
+    entry_start_time: "09:30"        # no entries before this -- matches the backtest's ENTRY_START_TIME
+    entry_cutoff_time: "14:50"       # no new entries after this -- matches the backtest's FORCE_EXIT_TIME (no separate buffer)
+    # No new entries at all on the contract's own expiry day, regardless of the
+    # cutoff above (see alpha/instrument_engine.py) -- real 0DTE gamma/spread risk
+    # the backtest can't see. This is a deliberate deviation from what was
+    # backtested (the 1000-day backtest traded straight through expiry days).
+    force_exit_time: "14:50"         # force-close any open position at/after this time -- matches the backtest
+    force_exit_time_expiry_day: "14:45"     # safety fallback: force-close if a position is somehow still open on expiry day
+
+market:
+  open_time: "09:22"
+  close_time: "15:20"
+
+# Exchange holiday calendar, one block per year: holiday_list_<YYYY>.
+# At startup the bot takes today's date, derives the year, and looks up
+# holiday_list_<that year> to decide whether to trade today (alpha/config.py
+# AppConfig.holidays_for_year). Add a new block every December for the coming year --
+# NSE publishes it then. If the block for the current year is missing, the bot logs a
+# warning and treats today as a trading day (fails open, not closed).
+
+# Source: NSE trading holidays for equities/F&O, calendar year 2026.
+# Includes 08-Nov-2026 (Diwali Laxmi Pujan) -- regular trading is closed that day;
+# only the special ceremonial Muhurat Trading session runs, which this bot should
+# not participate in.
+holiday_list_2026:
+  - {date: "15-Jan-2026", name: "Municipal Corporation Election - Maharashtra"}
+  - {date: "26-Jan-2026", name: "Republic Day"}
+  - {date: "03-Mar-2026", name: "Holi"}
+  - {date: "26-Mar-2026", name: "Shri Ram Navami"}
+  - {date: "31-Mar-2026", name: "Shri Mahavir Jayanti"}
+  - {date: "03-Apr-2026", name: "Good Friday"}
+  - {date: "14-Apr-2026", name: "Dr. Baba Saheb Ambedkar Jayanti"}
+  - {date: "01-May-2026", name: "Maharashtra Day"}
+  - {date: "28-May-2026", name: "Bakri Id"}
+  - {date: "26-Jun-2026", name: "Muharram"}
+  - {date: "14-Sep-2026", name: "Ganesh Chaturthi"}
+  - {date: "02-Oct-2026", name: "Mahatma Gandhi Jayanti"}
+  - {date: "20-Oct-2026", name: "Dussehra"}
+  - {date: "08-Nov-2026", name: "Diwali Laxmi Pujan (Muhurat Trading only)"}
+  - {date: "10-Nov-2026", name: "Diwali-Balipratipada"}
+  - {date: "24-Nov-2026", name: "Prakash Gurpurb Sri Guru Nanak Dev"}
+  - {date: "25-Dec-2026", name: "Christmas"}
