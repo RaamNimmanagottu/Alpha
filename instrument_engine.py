@@ -78,7 +78,8 @@ class InstrumentEngine:
             # Always manage an existing position regardless of expiry day -- never
             # abandon a live trade, only refuse to open new ones on expiry day.
             force_exit = self.cfg.force_exit_time_expiry_day if expiry_today else self.cfg.force_exit_time
-            self._manage_open_trade(open_trade, ltp, now, force_exit)
+            option_ltp = self.broker.underlying_price("NFO", open_trade.symbol, open_trade.token)
+            self._manage_open_trade(open_trade, ltp, option_ltp, now, force_exit)
             return
 
         if expiry_today:
@@ -202,35 +203,56 @@ class InstrumentEngine:
             f"@ {result.price:.2f} x{self.cfg.quantity} (underlying={underlying_ltp:.1f})"
         )
 
-    def _manage_open_trade(self, open_trade, underlying_ltp: float, now: datetime, force_exit: time) -> None:
+    def _manage_open_trade(
+        self, open_trade, underlying_ltp: float, option_ltp: float, now: datetime, force_exit: time
+    ) -> None:
         entry_underlying = open_trade.entry_underlying_price
+        entry_price = open_trade.entry_price
         take_profit_points = self.cfg.take_profit_points
         stop_loss_points = self.cfg.stop_loss_points
 
+        # Take-profit fires on whichever condition hits first: the underlying index
+        # moving take_profit_points, OR the option's own premium rising by
+        # take_profit_premium_pct from the entry fill (e.g. entry 150 + 10% -> exit
+        # at 165). Stop-loss stays purely index-based -- the premium side is only
+        # used to lock in profit faster when the option itself outpaces the index
+        # (e.g. IV expansion), not to cut losses.
         if open_trade.trade_type == "CE":
-            take_profit_price = entry_underlying + take_profit_points
+            index_take_profit_price = entry_underlying + take_profit_points
             stop_loss_price = entry_underlying - stop_loss_points
-            hit_take_profit = underlying_ltp >= take_profit_price
+            hit_index_take_profit = underlying_ltp >= index_take_profit_price
             hit_stop_loss = underlying_ltp <= stop_loss_price
         else:  # PE
-            take_profit_price = entry_underlying - take_profit_points
+            index_take_profit_price = entry_underlying - take_profit_points
             stop_loss_price = entry_underlying + stop_loss_points
-            hit_take_profit = underlying_ltp <= take_profit_price
+            hit_index_take_profit = underlying_ltp <= index_take_profit_price
             hit_stop_loss = underlying_ltp >= stop_loss_price
+
+        premium_take_profit_price = entry_price * (1 + self.cfg.take_profit_premium_pct / 100)
+        hit_premium_take_profit = option_ltp > 0 and option_ltp >= premium_take_profit_price
+        hit_take_profit = hit_index_take_profit or hit_premium_take_profit
 
         hit_time_exit = now.time() >= force_exit
 
         if not (hit_take_profit or hit_stop_loss or hit_time_exit):
-            logger.info("%s: holding %s, underlying=%.2f entry_underlying=%.2f tp=%.2f sl=%.2f",
-                        self.cfg.name, open_trade.symbol, underlying_ltp, entry_underlying,
-                        take_profit_price, stop_loss_price)
+            logger.info(
+                "%s: holding %s, underlying=%.2f entry_underlying=%.2f index_tp=%.2f sl=%.2f "
+                "option_ltp=%.2f entry_price=%.2f premium_tp=%.2f",
+                self.cfg.name, open_trade.symbol, underlying_ltp, entry_underlying,
+                index_take_profit_price, stop_loss_price, option_ltp, entry_price, premium_take_profit_price,
+            )
             return
 
-        reason = "take_profit" if hit_take_profit else "stop_loss" if hit_stop_loss else "time_exit"
-        logger.info("%s: exiting %s due to %s (underlying=%.2f)",
-                     self.cfg.name, open_trade.symbol, reason, underlying_ltp)
-
-        entry_price = open_trade.entry_price
+        if hit_index_take_profit:
+            reason = "take_profit_index"
+        elif hit_premium_take_profit:
+            reason = "take_profit_premium"
+        elif hit_stop_loss:
+            reason = "stop_loss"
+        else:
+            reason = "time_exit"
+        logger.info("%s: exiting %s due to %s (underlying=%.2f, option_ltp=%.2f)",
+                     self.cfg.name, open_trade.symbol, reason, underlying_ltp, option_ltp)
 
         result = self._execute_order(open_trade.symbol, open_trade.token, "SELL", open_trade.quantity)
         if result is None:

@@ -51,8 +51,9 @@ instruments:
     quantity_lots: 1
     buy_strike_offset: 0        # ATM -- matches the ATM assumption used throughout backtesting
     sell_strike_offset: 0
-    take_profit_points: 100     # points of INDEX movement, not option premium % -- matches the backtest exactly
-    stop_loss_points: 50
+    take_profit_points: 100     # points of INDEX movement -- matches the backtest exactly
+    take_profit_premium_pct: 10 # ALSO exit if the option premium itself rises 10% from entry (e.g. 150 -> 165), whichever hits first
+    stop_loss_points: 50        # index-based only -- the premium % above is take-profit only, not used for stop-loss
     entry_start_time: "09:30"        # no entries before this -- matches the backtest's ENTRY_START_TIME
     entry_cutoff_time: "14:50"       # no new entries after this -- matches the backtest's FORCE_EXIT_TIME (no separate buffer)
     # No new entries at all on the contract's own expiry day, regardless of the

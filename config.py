@@ -58,9 +58,15 @@ class InstrumentConfig:
     buy_strike_offset: float
     sell_strike_offset: float
     take_profit_points: float
-    """Points of INDEX movement (not option premium %) that triggers a take-profit
-    exit -- matches backtest/trade_simulator.py exactly, since that's what was
-    actually validated in backtesting."""
+    """Points of INDEX movement that triggers a take-profit exit -- matches
+    backtest/trade_simulator.py exactly, since that's what was actually validated in
+    backtesting."""
+    take_profit_premium_pct: float
+    """Take-profit also fires if the option's own premium rises this % from the
+    entry fill (e.g. entry 150, pct=10 -> exit at 165), independent of the index-based
+    check above -- whichever condition hits first wins. Not backtested; a live-only
+    addition to lock in gains faster when the premium outpaces the index (e.g. IV
+    expansion)."""
     stop_loss_points: float
     entry_start_time: time
     """No entries before this time -- matches the backtest's ENTRY_START_TIME."""
@@ -142,6 +148,7 @@ class AppConfig:
                 buy_strike_offset=float(i["buy_strike_offset"]),
                 sell_strike_offset=float(i["sell_strike_offset"]),
                 take_profit_points=float(i["take_profit_points"]),
+                take_profit_premium_pct=float(i["take_profit_premium_pct"]),
                 stop_loss_points=float(i["stop_loss_points"]),
                 entry_start_time=_parse_time(i["entry_start_time"]),
                 entry_cutoff_time=_parse_time(i["entry_cutoff_time"]),
