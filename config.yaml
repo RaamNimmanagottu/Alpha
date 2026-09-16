@@ -21,6 +21,39 @@ paper_trading: true
 strike_selection_mode: delta
 target_delta: 0.5   # only used when strike_selection_mode is "delta"; 0.5 ~= ATM, so this starts equivalent to current behavior
 
+# "Trader-style" live position monitoring, on top of the fixed points-based exits
+# below. Every one of these is NOT backtested -- live-only additions -- and each
+# has its own kill switch so any one of them can be disabled independently if it
+# misbehaves, without touching the others.
+
+# Trailing stop-loss: once the trade has moved trailing_stop_activation_points in
+# its favor, the stop-loss trails trailing_stop_distance_points behind the best
+# underlying price seen since entry. Can only tighten the stop, never loosen it
+# below the original stop_loss_points level.
+trailing_stop_enabled: true
+trailing_stop_activation_points: 50
+trailing_stop_distance_points: 30
+
+# Exit immediately if the EMA9/EMA21 signal reverses direction while a trade is
+# open (e.g. a SELL signal fires while holding a CE) -- the strategy itself is
+# saying the setup that justified the entry no longer holds.
+signal_reversal_exit_enabled: true
+
+# Exit if the option's IV has dropped this % from its value at entry, even if
+# index points haven't hit stop-loss -- IV crush eroding the premium out from
+# under an otherwise-fine index move. Skipped gracefully for a cycle if entry IV
+# wasn't recorded or a fresh IV read isn't available.
+iv_exit_enabled: true
+iv_exit_drop_pct: 20
+iv_check_interval_seconds: 30   # throttle: this is a separate whole-chain API call, don't hammer it every poll cycle
+
+# Exit early if the index moves momentum_exit_points in the trade's favorable
+# direction within momentum_window_minutes -- a fast move is treated as likely to
+# fade/reverse, so lock in the gain rather than wait for the normal target.
+momentum_exit_enabled: true
+momentum_window_minutes: 10
+momentum_exit_points: 60
+
 # VM cost savings: on a Linux VM that's meant to auto-start each morning, this
 # powers the machine off after any clean exit (holiday, weekend, or market closed
 # for the day) -- so it doesn't sit running (and billing) the rest of the day.

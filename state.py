@@ -40,6 +40,8 @@ _MIGRATION_COLUMNS = {
     "strike": "REAL",
     "pnl": "REAL",
     "mode": "TEXT NOT NULL DEFAULT 'LIVE'",
+    "entry_iv": "REAL",
+    "peak_favorable_underlying": "REAL",
 }
 
 
@@ -66,6 +68,12 @@ class Trade:
     status: str
     opened_at: str
     closed_at: Optional[str]
+    entry_iv: Optional[float]
+    """The option's implied volatility at entry, if greeks were available -- used to
+    detect IV crush (a meaningful IV drop from this baseline) as an exit trigger."""
+    peak_favorable_underlying: Optional[float]
+    """Best underlying price seen since entry, in the trade's favorable direction --
+    the trailing stop-loss trails behind this, never behind the original static SL."""
 
 
 class TradeStore:
@@ -108,14 +116,16 @@ class TradeStore:
         entry_underlying_price: float,
         strike: float,
         mode: str = "LIVE",
+        entry_iv: float | None = None,
     ) -> int:
         now = datetime.now()
         with self._connect() as conn:
             cur = conn.execute(
                 """INSERT INTO trades
                    (trade_date, instrument, order_id, symbol, trade_type, token, strike,
-                    entry_price, entry_underlying_price, quantity, mode, status, opened_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?)""",
+                    entry_price, entry_underlying_price, quantity, mode, status, opened_at,
+                    entry_iv, peak_favorable_underlying)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?)""",
                 (
                     date.today().isoformat(),
                     instrument,
@@ -129,6 +139,8 @@ class TradeStore:
                     quantity,
                     mode,
                     now.isoformat(timespec="seconds"),
+                    entry_iv,
+                    entry_underlying_price,  # peak starts at entry -- nothing favorable has happened yet
                 ),
             )
             return cur.lastrowid
@@ -141,6 +153,13 @@ class TradeStore:
                        pnl=(? - entry_price) * quantity
                    WHERE id=?""",
                 (exit_price, datetime.now().isoformat(timespec="seconds"), exit_price, trade_id),
+            )
+
+    def update_peak_favorable(self, trade_id: int, peak_favorable_underlying: float) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE trades SET peak_favorable_underlying=? WHERE id=?",
+                (peak_favorable_underlying, trade_id),
             )
 
     def get_open_trade(self, instrument: str) -> Optional[Trade]:

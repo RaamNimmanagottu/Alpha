@@ -55,10 +55,28 @@ class InstrumentEngine:
         (entered or not) -- without this, the same crossover event would be
         re-evaluated on every poll cycle until a new candle forms."""
 
+        self._last_iv_check_time: datetime | None = None
+        self._last_known_iv: float | None = None
+        """Throttled IV cache for the currently open position (see _maybe_fetch_iv).
+        Explicitly reset to None in _enter() on every new trade -- otherwise a stale
+        value left over from a just-closed trade could look like an IV crash on the
+        very first cycle of a brand new one."""
+
     def _is_expiry_today(self, atm_df) -> bool:
         expiry_str = atm_df["expiry"].iloc[0]
         expiry_date = datetime.strptime(expiry_str, "%d%b%Y").date()
         return expiry_date == date.today()
+
+    def _get_candles(self) -> pd.DataFrame:
+        hist_cfg = self.app_cfg.historical_data
+        return update_historical_data(
+            self.broker,
+            self.cfg.candle_token,
+            self._historical_excel_path,
+            interval=hist_cfg.interval,
+            interval_minutes=hist_cfg.interval_minutes,
+            lookback_days=hist_cfg.lookback_days,
+        )
 
     def run_once(self) -> None:
         now = datetime.now()
@@ -81,7 +99,13 @@ class InstrumentEngine:
             # abandon a live trade, only refuse to open new ones on expiry day.
             force_exit = self.cfg.force_exit_time_expiry_day if expiry_today else self.cfg.force_exit_time
             option_ltp = self.broker.underlying_price("NFO", open_trade.symbol, open_trade.token)
-            self._manage_open_trade(open_trade, ltp, option_ltp, now, force_exit)
+            candles = self._get_candles()
+            latest_signal = get_signal(self.cfg.exchange_index_symbol, candles)
+            expiry_str = atm_df["expiry"].iloc[0]
+            current_iv = self._maybe_fetch_iv(open_trade, expiry_str)
+            self._manage_open_trade(
+                open_trade, ltp, option_ltp, now, force_exit, candles, latest_signal, current_iv
+            )
             return
 
         if expiry_today:
@@ -103,15 +127,7 @@ class InstrumentEngine:
             logger.info("%s: entry blocked by risk manager: %s", self.cfg.name, reason)
             return
 
-        hist_cfg = self.app_cfg.historical_data
-        candles = update_historical_data(
-            self.broker,
-            self.cfg.candle_token,
-            self._historical_excel_path,
-            interval=hist_cfg.interval,
-            interval_minutes=hist_cfg.interval_minutes,
-            lookback_days=hist_cfg.lookback_days,
-        )
+        candles = self._get_candles()
         signal = get_signal(self.cfg.exchange_index_symbol, candles)
         logger.info("%s signal: %s (ltp=%.1f)", self.cfg.name, signal.direction, ltp)
 
@@ -252,6 +268,7 @@ class InstrumentEngine:
             return
 
         mode = "PAPER" if self.app_cfg.paper_trading else "LIVE"
+        entry_iv = float(greek["impliedVolatility"]) if greek is not None else None
         self.store.open_trade(
             instrument=self.cfg.name,
             order_id=result.order_id,
@@ -263,7 +280,12 @@ class InstrumentEngine:
             entry_underlying_price=underlying_ltp,
             strike=strike,
             mode=mode,
+            entry_iv=entry_iv,
         )
+        # A stale IV cached from a just-closed trade must never leak into this new
+        # one's IV-crush check -- force a fresh fetch on its first management cycle.
+        self._last_iv_check_time = None
+        self._last_known_iv = entry_iv
 
         greeks_note = ""
         if greek is not None:
@@ -278,56 +300,166 @@ class InstrumentEngine:
             f"@ {result.price:.2f} x{self.cfg.quantity} (underlying={underlying_ltp:.1f}){greeks_note}"
         )
 
+    def _maybe_fetch_iv(self, open_trade, expiry_str: str) -> float | None:
+        """Throttled IV fetch for the open position -- optionGreek is a separate
+        whole-chain API call, and doing it every 3s poll cycle risks the broker's
+        rate limit (observed directly in live testing). Returns the last known-good
+        IV on a skipped or failed cycle rather than None, so one transient failure
+        can't masquerade as "IV crashed to nothing" and falsely trigger an exit.
+        """
+        now = datetime.now()
+        if (
+            self._last_iv_check_time is not None
+            and (now - self._last_iv_check_time).total_seconds() < self.app_cfg.iv_check_interval_seconds
+        ):
+            return self._last_known_iv
+
+        self._last_iv_check_time = now
+        greeks_df = self.broker.option_greeks(self.cfg.exchange_index_symbol, expiry_str)
+        if greeks_df.empty:
+            return self._last_known_iv
+
+        matches = greeks_df[
+            (greeks_df["optionType"] == open_trade.trade_type)
+            & ((greeks_df["strikePrice"] - open_trade.strike).abs() < 0.01)
+        ]
+        if matches.empty:
+            return self._last_known_iv
+
+        iv = float(matches.iloc[0]["impliedVolatility"])
+        if not (0 < iv < 200):  # sanity bound -- reject corrupted/degenerate values
+            return self._last_known_iv
+
+        self._last_known_iv = iv
+        return iv
+
+    def _momentum_move(self, candles: pd.DataFrame, trade_type: str) -> float | None:
+        """Points moved in the trade's favorable direction over the last
+        momentum_window_minutes, or None if there isn't enough candle history yet
+        to measure it."""
+        if candles.empty:
+            return None
+        cutoff = candles["date"].iloc[-1] - pd.Timedelta(minutes=self.app_cfg.momentum_window_minutes)
+        window = candles[candles["date"] >= cutoff]
+        if len(window) < 2:
+            return None
+        start_price = float(window["close"].iloc[0])
+        end_price = float(window["close"].iloc[-1])
+        return (end_price - start_price) if trade_type == "CE" else (start_price - end_price)
+
     def _manage_open_trade(
-        self, open_trade, underlying_ltp: float, option_ltp: float, now: datetime, force_exit: time
+        self,
+        open_trade,
+        underlying_ltp: float,
+        option_ltp: float,
+        now: datetime,
+        force_exit: time,
+        candles: pd.DataFrame,
+        latest_signal,
+        current_iv: float | None,
     ) -> None:
         entry_underlying = open_trade.entry_underlying_price
         entry_price = open_trade.entry_price
         take_profit_points = self.cfg.take_profit_points
         stop_loss_points = self.cfg.stop_loss_points
 
-        # Take-profit fires on whichever condition hits first: the underlying index
-        # moving take_profit_points, OR the option's own premium rising by
-        # take_profit_premium_pct from the entry fill (e.g. entry 150 + 10% -> exit
-        # at 165). Stop-loss stays purely index-based -- the premium side is only
-        # used to lock in profit faster when the option itself outpaces the index
-        # (e.g. IV expansion), not to cut losses.
+        # -- Static index-based take-profit/stop-loss: the backtested baseline -----
         if open_trade.trade_type == "CE":
             index_take_profit_price = entry_underlying + take_profit_points
-            stop_loss_price = entry_underlying - stop_loss_points
+            static_stop_loss_price = entry_underlying - stop_loss_points
             hit_index_take_profit = underlying_ltp >= index_take_profit_price
-            hit_stop_loss = underlying_ltp <= stop_loss_price
         else:  # PE
             index_take_profit_price = entry_underlying - take_profit_points
-            stop_loss_price = entry_underlying + stop_loss_points
+            static_stop_loss_price = entry_underlying + stop_loss_points
             hit_index_take_profit = underlying_ltp <= index_take_profit_price
+
+        # -- Trailing stop-loss (live-only): can only tighten the stop, never loosen
+        # it past the static level above --------------------------------------------
+        stop_loss_price = static_stop_loss_price
+        peak = (
+            open_trade.peak_favorable_underlying
+            if open_trade.peak_favorable_underlying is not None
+            else entry_underlying
+        )
+        if self.app_cfg.trailing_stop_enabled:
+            if open_trade.trade_type == "CE":
+                new_peak = max(peak, underlying_ltp)
+                favorable_move = new_peak - entry_underlying
+                if favorable_move >= self.app_cfg.trailing_stop_activation_points:
+                    stop_loss_price = max(static_stop_loss_price, new_peak - self.app_cfg.trailing_stop_distance_points)
+            else:  # PE
+                new_peak = min(peak, underlying_ltp)
+                favorable_move = entry_underlying - new_peak
+                if favorable_move >= self.app_cfg.trailing_stop_activation_points:
+                    stop_loss_price = min(static_stop_loss_price, new_peak + self.app_cfg.trailing_stop_distance_points)
+
+            if new_peak != peak:
+                self.store.update_peak_favorable(open_trade.id, new_peak)
+            peak = new_peak
+
+        if open_trade.trade_type == "CE":
+            hit_stop_loss = underlying_ltp <= stop_loss_price
+        else:
             hit_stop_loss = underlying_ltp >= stop_loss_price
 
+        # -- Premium %-based take-profit ---------------------------------------------
         premium_take_profit_price = entry_price * (1 + self.cfg.take_profit_premium_pct / 100)
         hit_premium_take_profit = option_ltp > 0 and option_ltp >= premium_take_profit_price
         hit_take_profit = hit_index_take_profit or hit_premium_take_profit
 
+        # -- Signal-reversal exit (live-only) -----------------------------------------
+        hit_signal_reversal = False
+        if self.app_cfg.signal_reversal_exit_enabled and latest_signal is not None:
+            hit_signal_reversal = (
+                (open_trade.trade_type == "CE" and latest_signal.direction == "SELL")
+                or (open_trade.trade_type == "PE" and latest_signal.direction == "BUY")
+            )
+
+        # -- IV-crush exit (live-only) -------------------------------------------------
+        hit_iv_exit = False
+        if self.app_cfg.iv_exit_enabled and open_trade.entry_iv is not None and current_iv is not None:
+            iv_drop_pct = (open_trade.entry_iv - current_iv) / open_trade.entry_iv * 100
+            hit_iv_exit = iv_drop_pct >= self.app_cfg.iv_exit_drop_pct
+
+        # -- Momentum exit (live-only): a fast favorable move -> lock in profit ------
+        hit_momentum_exit = False
+        if self.app_cfg.momentum_exit_enabled:
+            move = self._momentum_move(candles, open_trade.trade_type)
+            hit_momentum_exit = move is not None and move >= self.app_cfg.momentum_exit_points
+
         hit_time_exit = now.time() >= force_exit
 
-        if not (hit_take_profit or hit_stop_loss or hit_time_exit):
+        if not (
+            hit_take_profit or hit_stop_loss or hit_time_exit
+            or hit_signal_reversal or hit_iv_exit or hit_momentum_exit
+        ):
             logger.info(
                 "%s: holding %s, underlying=%.2f entry_underlying=%.2f index_tp=%.2f sl=%.2f "
-                "option_ltp=%.2f entry_price=%.2f premium_tp=%.2f",
+                "option_ltp=%.2f entry_price=%.2f premium_tp=%.2f iv=%s entry_iv=%s",
                 self.cfg.name, open_trade.symbol, underlying_ltp, entry_underlying,
                 index_take_profit_price, stop_loss_price, option_ltp, entry_price, premium_take_profit_price,
+                f"{current_iv:.2f}" if current_iv is not None else "n/a",
+                f"{open_trade.entry_iv:.2f}" if open_trade.entry_iv is not None else "n/a",
             )
             return
 
-        if hit_index_take_profit:
+        if hit_stop_loss:
+            reason = "trailing_stop_loss" if stop_loss_price != static_stop_loss_price else "stop_loss"
+        elif hit_signal_reversal:
+            reason = "signal_reversal"
+        elif hit_iv_exit:
+            reason = "iv_crush"
+        elif hit_momentum_exit:
+            reason = "momentum"
+        elif hit_index_take_profit:
             reason = "take_profit_index"
         elif hit_premium_take_profit:
             reason = "take_profit_premium"
-        elif hit_stop_loss:
-            reason = "stop_loss"
         else:
             reason = "time_exit"
-        logger.info("%s: exiting %s due to %s (underlying=%.2f, option_ltp=%.2f)",
-                     self.cfg.name, open_trade.symbol, reason, underlying_ltp, option_ltp)
+        logger.info("%s: exiting %s due to %s (underlying=%.2f, option_ltp=%.2f, sl=%.2f, iv=%s)",
+                     self.cfg.name, open_trade.symbol, reason, underlying_ltp, option_ltp, stop_loss_price,
+                     f"{current_iv:.2f}" if current_iv is not None else "n/a")
 
         result = self._execute_order(open_trade.symbol, open_trade.token, "SELL", open_trade.quantity)
         if result is None:

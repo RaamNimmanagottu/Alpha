@@ -35,6 +35,20 @@ def _parse_target_delta(raw: dict) -> float:
     return value
 
 
+def _parse_positive_float(raw: dict, key: str, default: float) -> float:
+    value = float(raw.get(key, default))
+    if value <= 0:
+        raise ValueError(f"config.yaml: {key} must be > 0, got {value}")
+    return value
+
+
+def _parse_pct(raw: dict, key: str, default: float) -> float:
+    value = float(raw.get(key, default))
+    if not (0.0 < value < 100.0):
+        raise ValueError(f"config.yaml: {key} must be between 0 and 100 (exclusive), got {value}")
+    return value
+
+
 @dataclass(frozen=True)
 class Credentials:
     api_key: str
@@ -142,6 +156,41 @@ class AppConfig:
     target_delta: float
     """Only used when strike_selection_mode="delta". Compared against |delta| so the
     same value works for both CE (positive delta) and PE (negative delta)."""
+
+    trailing_stop_enabled: bool
+    """Once the trade has moved trailing_stop_activation_points in its favor, the
+    stop-loss trails trailing_stop_distance_points behind the best underlying price
+    seen since entry. Can only tighten the stop -- never looser than the original
+    static stop_loss_points level. Not backtested; a live-only addition."""
+    trailing_stop_activation_points: float
+    trailing_stop_distance_points: float
+
+    signal_reversal_exit_enabled: bool
+    """Exit immediately if the EMA9/EMA21 signal reverses direction while a trade is
+    open (e.g. a SELL signal fires while holding a CE) -- the strategy itself is
+    saying the setup that justified the entry no longer holds. Not backtested."""
+
+    iv_exit_enabled: bool
+    """Exit if the option's IV has dropped iv_exit_drop_pct from its value at entry,
+    even if index points haven't hit stop-loss -- IV crush eroding the premium's
+    value out from under an otherwise-fine index move. Requires entry_iv to have been
+    recorded (i.e. greeks were available at entry) and a fresh IV read to compare
+    against; silently skipped for a cycle if either is unavailable. Not backtested."""
+    iv_exit_drop_pct: float
+    iv_check_interval_seconds: float
+    """Throttles how often IV is re-fetched while a trade is open -- this is a
+    separate, whole-chain API call from the per-cycle option LTP fetch, and doing it
+    every poll cycle risks hitting the broker's rate limit (observed in testing)."""
+
+    momentum_exit_enabled: bool
+    """Exit early if the index moves momentum_exit_points in the trade's favorable
+    direction within momentum_window_minutes -- treated as a fast move likely to
+    fade/reverse, so lock in the gain rather than wait for the normal target. Not
+    backtested; deliberately the take-profit-sooner-on-a-spike interpretation, not
+    let-it-run."""
+    momentum_window_minutes: float
+    momentum_exit_points: float
+
     shutdown_vm_on_exit: bool
     """When true, main.py powers off the machine it's running on after any clean
     exit (holiday, weekend, or market closed for the day) -- for a VM that's meant
@@ -205,6 +254,16 @@ class AppConfig:
             paper_trading=bool(raw.get("paper_trading", True)),
             strike_selection_mode=_parse_strike_selection_mode(raw),
             target_delta=_parse_target_delta(raw),
+            trailing_stop_enabled=bool(raw.get("trailing_stop_enabled", False)),
+            trailing_stop_activation_points=_parse_positive_float(raw, "trailing_stop_activation_points", 50.0),
+            trailing_stop_distance_points=_parse_positive_float(raw, "trailing_stop_distance_points", 30.0),
+            signal_reversal_exit_enabled=bool(raw.get("signal_reversal_exit_enabled", False)),
+            iv_exit_enabled=bool(raw.get("iv_exit_enabled", False)),
+            iv_exit_drop_pct=_parse_pct(raw, "iv_exit_drop_pct", 20.0),
+            iv_check_interval_seconds=_parse_positive_float(raw, "iv_check_interval_seconds", 30.0),
+            momentum_exit_enabled=bool(raw.get("momentum_exit_enabled", False)),
+            momentum_window_minutes=_parse_positive_float(raw, "momentum_window_minutes", 10.0),
+            momentum_exit_points=_parse_positive_float(raw, "momentum_exit_points", 60.0),
             shutdown_vm_on_exit=bool(raw.get("shutdown_vm_on_exit", False)),
             risk=RiskConfig(
                 daily_loss_limit=float(raw["risk"]["daily_loss_limit"]),
