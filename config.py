@@ -16,6 +16,25 @@ def _parse_time(value: str) -> time:
     return time(int(hh), int(mm))
 
 
+_VALID_STRIKE_SELECTION_MODES = ("atm", "delta")
+
+
+def _parse_strike_selection_mode(raw: dict) -> str:
+    mode = raw.get("strike_selection_mode", "atm")
+    if mode not in _VALID_STRIKE_SELECTION_MODES:
+        raise ValueError(
+            f"config.yaml: strike_selection_mode must be one of {_VALID_STRIKE_SELECTION_MODES}, got {mode!r}"
+        )
+    return mode
+
+
+def _parse_target_delta(raw: dict) -> float:
+    value = float(raw.get("target_delta", 0.5))
+    if not (0.0 < value < 1.0):
+        raise ValueError(f"config.yaml: target_delta must be between 0 and 1 (exclusive), got {value}")
+    return value
+
+
 @dataclass(frozen=True)
 class Credentials:
     api_key: str
@@ -114,6 +133,15 @@ class AppConfig:
     using live LTP and recorded exactly like real trades (same TradeStore, same risk
     manager, same signal logic). Flip to false manually after reviewing a paper
     trading run; nothing in this codebase auto-graduates itself to real money."""
+    strike_selection_mode: str
+    """"atm" (default/backtested behavior: always buy the strike closest to spot) or
+    "delta" (buy the strike whose |delta| is closest to target_delta, from Angel
+    One's live optionGreek data). Falls back to "atm" automatically, per-entry, if
+    greeks data is unavailable or fails validation -- entries must never block on
+    this. Not backtested; "delta" is a live-only strategy change."""
+    target_delta: float
+    """Only used when strike_selection_mode="delta". Compared against |delta| so the
+    same value works for both CE (positive delta) and PE (negative delta)."""
     shutdown_vm_on_exit: bool
     """When true, main.py powers off the machine it's running on after any clean
     exit (holiday, weekend, or market closed for the day) -- for a VM that's meant
@@ -175,6 +203,8 @@ class AppConfig:
             order_fill_timeout_seconds=float(raw["order_fill_timeout_seconds"]),
             order_fill_poll_seconds=float(raw["order_fill_poll_seconds"]),
             paper_trading=bool(raw.get("paper_trading", True)),
+            strike_selection_mode=_parse_strike_selection_mode(raw),
+            target_delta=_parse_target_delta(raw),
             shutdown_vm_on_exit=bool(raw.get("shutdown_vm_on_exit", False)),
             risk=RiskConfig(
                 daily_loss_limit=float(raw["risk"]["daily_loss_limit"]),

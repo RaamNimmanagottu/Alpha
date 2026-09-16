@@ -4,6 +4,8 @@ import logging
 import uuid
 from datetime import date, datetime, time
 
+import pandas as pd
+
 from broker import AngelOneBroker, OrderRejected, OrderResult
 from config import ROOT_DIR, AppConfig, InstrumentConfig
 from ema_crossover_signal import get_signal
@@ -170,13 +172,79 @@ class InstrumentEngine:
             return None
         return result
 
-    def _enter(self, strike_reference_price: float, option_type: str, underlying_ltp: float) -> None:
-        atm_df = self.broker.option_contracts_atm(self.cfg.exchange_index_symbol, strike_reference_price)
-        candidates = atm_df[atm_df["symbol"].str.contains(option_type)]
+    def _select_atm_contract(self, candidates: pd.DataFrame, strike_reference_price: float):
+        atm_strike = candidates.loc[
+            (pd.to_numeric(candidates["strike"]) / 100 - strike_reference_price).abs().idxmin(), "strike"
+        ]
+        return candidates[candidates["strike"] == atm_strike].iloc[0]
+
+    def _select_contract(self, strike_reference_price: float, option_type: str):
+        """Returns (contract_row, greeks_row_or_None).
+
+        In "atm" mode (or as a fallback from "delta" mode), greeks_row is None and no
+        Telegram/log noise beyond the normal entry message is produced. In "delta"
+        mode, every fallback path is logged AND sent to Telegram, since silently
+        trading a different strike than configured is exactly the kind of thing that
+        must be visible, not just logged.
+        """
+        nearest_df = self.broker.option_contracts_nearest_expiry(self.cfg.exchange_index_symbol)
+        if nearest_df.empty:
+            return None, None
+        candidates = nearest_df[nearest_df["symbol"].str.contains(option_type)]
         if candidates.empty:
+            return None, None
+
+        if self.app_cfg.strike_selection_mode != "delta":
+            return self._select_atm_contract(candidates, strike_reference_price), None
+
+        expiry_str = candidates["expiry"].iloc[0]
+        greeks_df = self.broker.option_greeks(self.cfg.exchange_index_symbol, expiry_str)
+        if greeks_df.empty:
+            logger.warning("%s: option greeks unavailable, falling back to ATM strike selection", self.cfg.name)
+            self.notifier.send(
+                f"WARNING: {self.cfg.name} greeks fetch failed -- entry falling back to ATM strike selection."
+            )
+            return self._select_atm_contract(candidates, strike_reference_price), None
+
+        type_greeks = greeks_df[greeks_df["optionType"] == option_type]
+        # Sanity bounds: reject degenerate/corrupted rows outright rather than trust
+        # them -- |delta| must be a real probability-like value, IV must be positive.
+        valid_greeks = type_greeks[
+            (type_greeks["delta"].abs() > 0) & (type_greeks["delta"].abs() < 1)
+            & (type_greeks["impliedVolatility"] > 0)
+        ]
+        if valid_greeks.empty:
+            logger.warning("%s: no valid %s greeks rows, falling back to ATM strike selection",
+                            self.cfg.name, option_type)
+            self.notifier.send(
+                f"WARNING: {self.cfg.name} greeks data failed validation -- "
+                f"entry falling back to ATM strike selection."
+            )
+            return self._select_atm_contract(candidates, strike_reference_price), None
+
+        target = self.app_cfg.target_delta
+        best_greek = valid_greeks.loc[(valid_greeks["delta"].abs() - target).abs().idxmin()]
+
+        selected_strike_paise = round(best_greek["strikePrice"] * 100)
+        matching = candidates[pd.to_numeric(candidates["strike"]) == selected_strike_paise]
+        if matching.empty:
+            logger.warning(
+                "%s: delta-selected strike %.0f (delta=%.3f) has no tradeable contract, falling back to ATM",
+                self.cfg.name, best_greek["strikePrice"], best_greek["delta"],
+            )
+            self.notifier.send(
+                f"WARNING: {self.cfg.name} delta-selected strike {best_greek['strikePrice']:.0f} "
+                f"not tradeable -- entry falling back to ATM strike selection."
+            )
+            return self._select_atm_contract(candidates, strike_reference_price), None
+
+        return matching.iloc[0], best_greek
+
+    def _enter(self, strike_reference_price: float, option_type: str, underlying_ltp: float) -> None:
+        contract, greek = self._select_contract(strike_reference_price, option_type)
+        if contract is None:
             logger.error("%s: no %s contract found near %.1f", self.cfg.name, option_type, strike_reference_price)
             return
-        contract = candidates.iloc[0]
         strike = float(contract["strike"]) / 100  # instrument master quotes strikes in paise
 
         result = self._execute_order(contract["symbol"], contract["token"], "BUY", self.cfg.quantity)
@@ -196,11 +264,18 @@ class InstrumentEngine:
             strike=strike,
             mode=mode,
         )
-        logger.info("%s: [%s] entered %s %s @ %.2f x%d (underlying=%.1f)", self.cfg.name, mode, option_type,
-                    contract["symbol"], result.price, self.cfg.quantity, underlying_ltp)
+
+        greeks_note = ""
+        if greek is not None:
+            greeks_note = (
+                f" | delta={greek['delta']:.3f} gamma={greek['gamma']:.4f} theta={greek['theta']:.2f} "
+                f"vega={greek['vega']:.2f} iv={greek['impliedVolatility']:.2f}%"
+            )
+        logger.info("%s: [%s] entered %s %s @ %.2f x%d (underlying=%.1f)%s", self.cfg.name, mode, option_type,
+                    contract["symbol"], result.price, self.cfg.quantity, underlying_ltp, greeks_note)
         self.notifier.send(
             f"ENTRY [{mode}]: {self.cfg.name} {option_type} {contract['symbol']} "
-            f"@ {result.price:.2f} x{self.cfg.quantity} (underlying={underlying_ltp:.1f})"
+            f"@ {result.price:.2f} x{self.cfg.quantity} (underlying={underlying_ltp:.1f}){greeks_note}"
         )
 
     def _manage_open_trade(

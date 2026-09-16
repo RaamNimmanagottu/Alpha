@@ -13,6 +13,14 @@ order_fill_poll_seconds: 1
 # is no automatic graduation to real money anywhere in this codebase.
 paper_trading: true
 
+# Strike selection: "atm" (default, backtested) always buys the strike closest to
+# spot. "delta" instead buys the strike whose |delta| is closest to target_delta,
+# using Angel One's live optionGreek data -- automatically falls back to "atm" for
+# that entry (with a Telegram warning) if greeks data is unavailable or invalid, so
+# entries never block on this. NOT backtested -- a live-only strategy change.
+strike_selection_mode: delta
+target_delta: 0.5   # only used when strike_selection_mode is "delta"; 0.5 ~= ATM, so this starts equivalent to current behavior
+
 # VM cost savings: on a Linux VM that's meant to auto-start each morning, this
 # powers the machine off after any clean exit (holiday, weekend, or market closed
 # for the day) -- so it doesn't sit running (and billing) the rest of the day.

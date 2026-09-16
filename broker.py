@@ -101,14 +101,15 @@ class AngelOneBroker:
         ]
         return pd.DataFrame(contracts)
 
-    def option_contracts_atm(self, ticker: str, underlying_price: float) -> pd.DataFrame:
-        """Return the CE/PE pair closest to the money, restricted to the *nearest* expiry.
+    def option_contracts_nearest_expiry(self, ticker: str) -> pd.DataFrame:
+        """All strikes/CE+PE for the *nearest* expiry only.
 
         The previous implementation picked the closest strike across *all* expiries at
-        once, then sliced the first 4 rows -- since weekly and monthly contracts share
-        the same strike ladder, that could silently mix rows from two different expiries
-        into the result. Here we pick the nearest expiry first, then find the ATM strike
-        only within that expiry.
+        once -- since weekly and monthly contracts share the same strike ladder, that
+        could silently mix rows from two different expiries into the result. Filtering
+        to the nearest expiry first avoids that, and is shared by option_contracts_atm
+        (narrows further to one strike) and delta-based strike selection (searches
+        across all strikes at this expiry).
         """
         df = self.option_contracts(ticker)
         if df.empty:
@@ -117,12 +118,56 @@ class AngelOneBroker:
         df = df.copy()
         df["expiry_date"] = pd.to_datetime(df["expiry"], format="%d%b%Y")
         nearest_expiry = df["expiry_date"].min()
-        df = df[df["expiry_date"] == nearest_expiry].reset_index(drop=True)
+        return df[df["expiry_date"] == nearest_expiry].reset_index(drop=True)
+
+    def option_contracts_atm(self, ticker: str, underlying_price: float) -> pd.DataFrame:
+        """Return the CE/PE pair closest to the money, restricted to the nearest expiry."""
+        df = self.option_contracts_nearest_expiry(ticker)
+        if df.empty:
+            return df
 
         strikes = pd.to_numeric(df["strike"]) / 100
         atm_idx = (strikes - underlying_price).abs().idxmin()
         atm_strike = df.loc[atm_idx, "strike"]
         return df[df["strike"] == atm_strike].reset_index(drop=True)
+
+    def option_greeks(self, name: str, expiry: str) -> pd.DataFrame:
+        """Delta/gamma/theta/vega/IV for every strike of `name` at `expiry` (e.g.
+        expiry="22SEP2026", matching the instrument master's own expiry format).
+
+        Returns an empty DataFrame on any failure (API error, malformed response, or
+        every row failing numeric validation) -- callers must treat that as "greeks
+        unavailable" and fall back to ATM selection rather than blocking entries.
+        """
+        def _fetch():
+            return self.client.optionGreek({"name": name, "expirydate": expiry})
+
+        try:
+            response = _retry(_fetch, attempts=2, delay_seconds=0.5, what=f"optionGreek {name} {expiry}")
+        except BrokerError:
+            logger.error("Could not fetch option greeks for %s %s after retries", name, expiry)
+            return pd.DataFrame()
+
+        if not response or not response.get("status"):
+            logger.error("optionGreek failed for %s %s: %s", name, expiry, response)
+            return pd.DataFrame()
+
+        rows = response.get("data") or []
+        df = pd.DataFrame(rows)
+        if df.empty:
+            return df
+
+        numeric_cols = ["strikePrice", "delta", "gamma", "theta", "vega", "impliedVolatility"]
+        for col in numeric_cols:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+        before = len(df)
+        df = df.dropna(subset=numeric_cols).reset_index(drop=True)
+        if len(df) < before:
+            logger.warning("optionGreek %s %s: dropped %d row(s) with unparseable numeric fields",
+                            name, expiry, before - len(df))
+
+        return df
 
     def underlying_price(self, exchange: str, ticker: str, token: str) -> float:
         def _fetch():
