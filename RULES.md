@@ -3,7 +3,7 @@
 Living document of every finalized rule/decision, so nothing has to be re-derived
 from chat history. Update this file whenever a new rule is validated and locked in.
 
-Last updated: 2026-09-17 (after `phase-1` tag).
+Last updated: 2026-09-17 (after `phase-1` tag; added FINNIFTY backtest findings).
 
 ---
 
@@ -34,9 +34,27 @@ real historical data — never assume one strategy transfers to another instrume
   ema_crossover/TP=300/SL=150 before this is actually correct in code). **NOT
   deployed to EC2** — awaiting explicit go-ahead (see Rule #10).
 
+### FINNIFTY
+- **Signal**: Keltner Channel Breakout — NOT EMA crossover (EMA is only #4 here,
+  +2460pts; Keltner wins by a wide margin). A THIRD different strategy across our
+  3 index instruments so far (NIFTY: EMA, BANKNIFTY: EMA-different-TP/SL, FINNIFTY:
+  Keltner) — confirms again that signals don't transfer across instruments.
+- **Take-profit**: 150 index points
+- **Stop-loss**: 75 index points
+- **Lot size**: not yet confirmed live (check instrument master before building)
+- **Backtest**: 1000 days (50,563 candles, 2023-12-26 to 2026-09-17, price range
+  19829-28555, current ~25318), 1075 trades, 49.40% win rate, +8623.00 points —
+  robust across nearby TP/SL values too (120/60: +7643, 150/100: +7472 with even
+  higher 51.46% win rate), not a single lucky number.
+- **Status**: BACKTESTED AND DOCUMENTED ONLY — no code written yet (no
+  `keltner_channel_signal.py`, no config.yaml entry). Do not assume this is live
+  anywhere. Build it (new signal module + per-instrument dispatch entry, same
+  pattern as `rsi_oversold_signal.py`) only when explicitly asked.
+
 ### Not yet built
-- FINNIFTY, GOLD, CRUDEOIL — feasibility-checked (data available; GOLD/CRUDEOIL
-  have real volume, NSE indices don't), not yet backtested or built.
+- GOLD, CRUDEOIL — feasibility-checked (real volume available on both, unlike
+  NSE indices; MCX session runs ~9:00 AM to ~9:25 PM, not literally "night only").
+  Not yet backtested.
 
 ---
 
