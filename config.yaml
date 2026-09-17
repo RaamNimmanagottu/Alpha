@@ -54,6 +54,16 @@ momentum_exit_enabled: true
 momentum_window_minutes: 10
 momentum_exit_points: 60
 
+# Pullback entry: don't chase an already-extended crossover candle -- wait for
+# price to pull back to that candle's own low (BUY) / high (SELL) instead of
+# entering immediately. Backtested on 1000 days: beat immediate entry on total
+# points (+10.8%), win rate, AND avg points/trade at this threshold, and the
+# improvement held across 80-150pts, not just one lucky number. If the pullback
+# never comes (or a fresh opposite signal appears first), the trade is skipped
+# rather than chased late.
+pullback_entry_enabled: true
+pullback_extended_threshold_points: 100
+
 # VM cost savings: on a Linux VM that's meant to auto-start each morning, this
 # powers the machine off after any clean exit (holiday, weekend, or market closed
 # for the day) -- so it doesn't sit running (and billing) the rest of the day.

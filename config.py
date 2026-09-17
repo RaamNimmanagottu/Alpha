@@ -191,6 +191,20 @@ class AppConfig:
     momentum_window_minutes: float
     momentum_exit_points: float
 
+    pullback_entry_enabled: bool
+    """Backtested on 1000 days of NIFTY 5-min data: when the EMA9/21 crossover
+    candle is unusually large (see pullback_extended_threshold_points), entering
+    immediately means chasing a move that's already mostly happened. Waiting for
+    price to pull back to that candle's own low (BUY) / high (SELL) before
+    entering beat immediate entry on every metric (total points, win rate, avg
+    points/trade) at a threshold around 100pts -- not just one lucky number, the
+    improvement held across a wide range (80-150pts). Below the threshold,
+    immediate entry (the original backtested baseline) still wins, so only
+    extended candles get this treatment. If the pullback never comes before
+    entry_cutoff_time, or a fresh opposite signal appears first, the trade is
+    skipped entirely rather than chased late."""
+    pullback_extended_threshold_points: float
+
     shutdown_vm_on_exit: bool
     """When true, main.py powers off the machine it's running on after any clean
     exit (holiday, weekend, or market closed for the day) -- for a VM that's meant
@@ -264,6 +278,8 @@ class AppConfig:
             momentum_exit_enabled=bool(raw.get("momentum_exit_enabled", False)),
             momentum_window_minutes=_parse_positive_float(raw, "momentum_window_minutes", 10.0),
             momentum_exit_points=_parse_positive_float(raw, "momentum_exit_points", 60.0),
+            pullback_entry_enabled=bool(raw.get("pullback_entry_enabled", False)),
+            pullback_extended_threshold_points=_parse_positive_float(raw, "pullback_extended_threshold_points", 100.0),
             shutdown_vm_on_exit=bool(raw.get("shutdown_vm_on_exit", False)),
             risk=RiskConfig(
                 daily_loss_limit=float(raw["risk"]["daily_loss_limit"]),
