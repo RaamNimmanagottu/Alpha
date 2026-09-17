@@ -265,6 +265,21 @@ decision to make consciously, not accidentally.
 - Instance: `i-0f3149bf3fc2e4779` ("alpha-trading-bot"), region
   **ap-southeast-2** (Sydney), user `admin`, SSH key
   `C:\Users\DELL\.ssh\alpha-key.pem`.
+- **There IS an automated daily start scheduler** — EventBridge Scheduler
+  `alpha-vm-daily-start` (schedule group `default`, region ap-southeast-2),
+  cron `0 9 ? * MON-FRI *`, timezone Asia/Calcutta, target `EC2_StartInstances`,
+  enabled. Starts the instance at 9:00 AM IST every weekday — lands well before
+  the 9:15 market open, with room for the systemd 120s grace period plus the
+  bot's own `before_open` wait logic. **I incorrectly claimed on 2026-09-17
+  that no such scheduler existed** — I had only checked this git repo (where
+  the old Terraform/CloudTrail setup was removed) and never checked the AWS
+  Console directly, since my `aws events list-rules` / `aws lambda
+  list-functions` calls are also denied by the same org-level SCP. There is
+  NO scheduler for stopping the instance — that side is handled entirely by
+  the bot's own `shutdown_vm_on_exit` logic when it exits. **Whenever a
+  question is about what automation exists in AWS, check the Console (or ask
+  the user to) — do not assume from the repo alone, since Console-managed
+  infra like this leaves no trace in git.**
 - **Public IP is NOT static** — the instance uses auto-assign public IP (free
   while stopped; an Elastic IP would cost ~$3.60/month, deliberately not used).
   The IP changes every stop/start cycle, so old `known_hosts` entries go stale
