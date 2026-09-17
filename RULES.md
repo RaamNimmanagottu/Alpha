@@ -312,11 +312,38 @@ decision to make consciously, not accidentally.
   is DEAD for this account unless the org SCP changes or a different AWS
   Console login (not this IAM user) is used for that one action.
 - **Permanent fix actually adopted (2026-09-17), replacing the boothook trick**:
-  added `ExecStartPre=/bin/sleep 120` to `/etc/systemd/system/alpha.service`.
+  added a startup grace period to `/etc/systemd/system/alpha.service`.
   `alpha.service` stays enabled (auto-starts on boot, as before — no manual
   daily start step needed), but now waits 2 minutes after boot before `main.py`
   even runs. This gives a reliable window to SSH in (once the security group
   allows the current IP — see above) and stop/inspect the service before it
   can reach the market-closed self-shutdown path, on ANY boot, without needing
   the user-data/boothook dance at all. Negligible cost on a real trading day
-  (started well before market open anyway).
+  (started well before market open anyway). Verified end-to-end 2026-09-17:
+  reboot → 120s wait → bot starts → detects market closed → sends Telegram →
+  full `shutdown -h now` → instance goes to `stopped` in the AWS console, all
+  confirmed.
+  ```
+  [Service]
+  ...
+  TimeoutStartSec=180
+  ExecStartPre=/bin/sleep 120
+  ExecStart=/home/admin/alpha/.venv/bin/python /home/admin/alpha/main.py
+  ...
+  ```
+  **Gotcha that broke the first attempt**: `ExecStartPre=/bin/sleep 120` alone
+  is not enough — systemd's default `TimeoutStartSec` (90s) is shorter than the
+  120s sleep, so the start-pre step gets killed for "timing out" before the
+  sleep ever finishes, and the unit falls into an infinite
+  fail-after-90s/retry-after-30s loop that never reaches `main.py` at all (no
+  Telegram message, ever — this is what a broken version of this fix looks
+  like). Must explicitly set `TimeoutStartSec` longer than the sleep duration
+  (used 180s for a 120s sleep) whenever `ExecStartPre` includes a deliberate
+  delay.
+- **The user-data boothook set earlier during this incident must be cleared**
+  once this permanent fix is in place — a `#cloud-boothook` script that stops
+  and disables `alpha.service` runs on EVERY boot (that's its whole point,
+  unlike a normal user-data script which only runs once), so it will silently
+  re-disable the service on every future boot until the user-data is cleared
+  via the AWS Console (Instance Settings → Edit user data → blank it out).
+  Confirmed cleared 2026-09-17.
