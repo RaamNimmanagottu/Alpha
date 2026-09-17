@@ -3,7 +3,7 @@
 Living document of every finalized rule/decision, so nothing has to be re-derived
 from chat history. Update this file whenever a new rule is validated and locked in.
 
-Last updated: 2026-09-17 (after `phase-1` tag; added FINNIFTY backtest findings).
+Last updated: 2026-09-17 (after `phase-2` tag; added CRUDEOIL/GOLD backtest findings).
 
 ---
 
@@ -57,10 +57,67 @@ e.g. NIFTY+BANKNIFTY alone hitting 6 trades leaves FINNIFTY with zero for the
 rest of that day. Flagged, not yet changed -- a deliberate risk-parameter
 decision to make consciously, not accidentally.
 
-### Not yet built
-- GOLD, CRUDEOIL — feasibility-checked (real volume available on both, unlike
-  NSE indices; MCX session runs ~9:00 AM to ~9:25 PM, not literally "night only").
-  Not yet backtested.
+### CRUDEOIL (MCX futures) — documented only, NOT built in code
+- **Signal**: Donchian Channel Breakout (20) — close breaks above/below the prior
+  20-candle high/low. Beat VWAP Cross (2nd place) and Keltner Channel Breakout
+  (3rd) in a 27-strategy comparison that, for the first time, included volume-based
+  strategies (VWAP Cross) since MCX commodities have real volume unlike NSE
+  indices — confirms the user's hypothesis that volume-based signals are viable
+  here, though VWAP wasn't the single best.
+- **Take-profit**: 150 points; **Stop-loss**: 75 points (current price ~9731;
+  ATR(14) avg 13.32, median 9.69 — SL is ~7-8x median ATR, i.e. wide relative to
+  typical 5-min movement).
+- **Backtest**: 1000 days (119,981 candles, 2023-12-22 to 2026-09-17, real volume
+  sum 2.27 crore), 9145 trades, 45.96% win rate, +6092.00 points. TP/SL tuned
+  across 50/25 up to 500/250 — total points peak clearly at 150/75, then decline
+  as TP/SL widen further (200/100: +5522, 500/250: +3727) — a genuine plateau,
+  not a runaway/overfit edge.
+- **Risk-profile warning (worse here than on index instruments)**: at every TP/SL
+  tested from 50/25 up to 200/100, the single worst real trade lost **128 points**
+  — i.e. WORSE than the nominal stop-loss at every one of those settings (up to
+  4x worse than the 25-pt SL, still 1.7x worse than the 100-pt SL). This is the
+  same day-end force-exit gap already known for NIFTY/BANKNIFTY (see Exit Rules
+  section) but far more pronounced on CRUDEOIL. Also, 88-98% of trades exit on
+  time, not on TP/SL — the strategy is closer to "ride the breakout until forced
+  exit" than a tightly TP/SL-managed strategy. Position sizing and daily-loss-limit
+  assumptions would need re-checking against this before ever going live.
+- **Lot size**: not yet confirmed from live instrument master (needed before any
+  code is built).
+
+### GOLD (MCX futures) — documented only, NOT built in code
+- **Signal**: Keltner Channel Breakout — beat Donchian Channel Breakout (2nd) and
+  Williams %R (3rd). VWAP Cross placed 5th (+3164 at baseline TP/SL) — present
+  but not dominant on GOLD.
+- **Take-profit**: 500 points; **Stop-loss**: 250 points (current price ~154,305).
+- **Backtest**: only **130 days available** (6415 candles, 2026-05-14 to
+  2026-09-17, real volume sum 59,588) — this specific MCX contract
+  (GOLD04DEC26FUT) simply doesn't have more history yet; NOT a 1000-day test.
+  423 trades, 40.19% win rate, +11611.00 points, avg +27.45 pts/trade. TP/SL
+  tuned 150/75 up to 1500/750 — peaks clearly at 500/250, declines on both sides
+  (300/150: +10410, 1000/500: +6885).
+- **Confidence caveat (per Lesson #1)**: 130 days / 423 trades is a SMALL sample
+  by this project's own standard (the BANKNIFTY 100-day-sample mistake). Treat
+  this as preliminary until more history accumulates or a longer-history GOLD
+  contract/series can be sourced.
+- **Risk-profile warning**: worst single trade lost **988 points** at every TP/SL
+  from 150/75 up to 1000/500 — again far worse than the nominal SL (up to 13x
+  worse than the 75-pt SL, still ~4x worse than the 250-pt SL at the chosen
+  setting). Same day-end force-exit gap as CRUDEOIL, even more extreme.
+- **Lot size**: not yet confirmed from live instrument master (needed before any
+  code is built).
+
+### Commodities — general findings
+- Confirms the project's core lesson yet again: a 4th and 5th different winning
+  strategy (Donchian for CRUDEOIL, Keltner for GOLD) across 5 instruments now —
+  NIFTY (EMA), BANKNIFTY (EMA-different-TP/SL), FINNIFTY (Keltner), CRUDEOIL
+  (Donchian), GOLD (Keltner) — no single indicator transfers across instruments.
+- Volume-based signals (VWAP Cross) ARE viable on commodities (unlike NSE
+  indices where they produce zero trades) but did not turn out to be the single
+  best strategy on either commodity tested so far.
+- New lesson: day-end force-exit risk (already known for indices) is
+  significantly worse on these two commodities — real worst-case losses were
+  4-13x the nominal stop-loss depending on instrument/TP-SL setting. This should
+  be weighed carefully before building live code for either.
 
 ---
 
@@ -173,6 +230,11 @@ decision to make consciously, not accidentally.
    WORSE, not better** — the last 30 minutes before 14:50 tend to move against
    open positions on this data; the existing 14:50 cutoff is protective, not
    arbitrary.
+6. **Day-end force-exit can blow past the stop-loss far worse on commodities
+   than on indices.** Already known for NIFTY/BANKNIFTY (worst case ~2x the SL);
+   on CRUDEOIL and GOLD, worst observed real losses were 4-13x the nominal SL
+   across every TP/SL setting tested. Any commodity strategy must account for
+   this before going live, not just copy the index risk assumptions.
 
 ## 9. Git Workflow Rules
 
