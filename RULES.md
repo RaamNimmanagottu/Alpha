@@ -29,10 +29,9 @@ real historical data — never assume one strategy transfers to another instrume
 - **Lot size**: 30 (confirmed live from instrument master)
 - **Backtest**: 1000 days (50,563 candles, 2023-12-26 to 2026-09-17), 1136 trades,
   45.69% win rate, +9154.60 points
-- **Status**: built and validated locally, on GitHub `main` (commit `8a12455` added
-  it with RSI — since superseded; needs a follow-up commit switching it to
-  ema_crossover/TP=300/SL=150 before this is actually correct in code). **NOT
-  deployed to EC2** — awaiting explicit go-ahead (see Rule #10).
+- **Status**: built and correct in code as of commit `7f34715` (the earlier
+  `8a12455` had it wrong, on RSI — fixed). On GitHub `main`. **NOT deployed to
+  EC2** — awaiting explicit go-ahead (see Rule #10).
 
 ### FINNIFTY
 - **Signal**: Keltner Channel Breakout — NOT EMA crossover (EMA is only #4 here,
@@ -41,15 +40,22 @@ real historical data — never assume one strategy transfers to another instrume
   Keltner) — confirms again that signals don't transfer across instruments.
 - **Take-profit**: 150 index points
 - **Stop-loss**: 75 index points
-- **Lot size**: not yet confirmed live (check instrument master before building)
+- **Lot size**: 60 (confirmed live from instrument master)
 - **Backtest**: 1000 days (50,563 candles, 2023-12-26 to 2026-09-17, price range
   19829-28555, current ~25318), 1075 trades, 49.40% win rate, +8623.00 points —
   robust across nearby TP/SL values too (120/60: +7643, 150/100: +7472 with even
   higher 51.46% win rate), not a single lucky number.
-- **Status**: BACKTESTED AND DOCUMENTED ONLY — no code written yet (no
-  `keltner_channel_signal.py`, no config.yaml entry). Do not assume this is live
-  anywhere. Build it (new signal module + per-instrument dispatch entry, same
-  pattern as `rsi_oversold_signal.py`) only when explicitly asked.
+- **Status**: built in code as of commit `7f34715` (`keltner_channel_signal.py` +
+  config.yaml entry). On GitHub `main`. **NOT deployed to EC2** — awaiting
+  explicit go-ahead (see Rule #10).
+
+### Note on `max_trades_per_day` with 3 instruments
+`max_trades_per_day: 6` is a combined cap across NIFTY+BANKNIFTY+FINNIFTY. With
+3 instruments each capped individually at `max_trades_per_instrument: 3`, the
+combined cap (6) can now bind before every instrument reaches its own limit --
+e.g. NIFTY+BANKNIFTY alone hitting 6 trades leaves FINNIFTY with zero for the
+rest of that day. Flagged, not yet changed -- a deliberate risk-parameter
+decision to make consciously, not accidentally.
 
 ### Not yet built
 - GOLD, CRUDEOIL — feasibility-checked (real volume available on both, unlike
