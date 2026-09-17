@@ -278,8 +278,41 @@ decision to make consciously, not accidentally.
   `/home/admin/alpha`, re-apply the `shutdown_vm_on_exit: true` sed fix to
   `config.yaml`, restart the service, watch logs/Telegram for the startup
   message to confirm a clean boot.
-- Boothook trick (only needed if the box self-shuts-down before you can get in):
-  stop `alpha.service` via a `#cloud-boothook` script pushed through
-  `aws ec2 modify-instance-attribute --user-data` (base64-encoded), since
-  `shutdown_vm_on_exit: true` triggers `sudo shutdown -h now` immediately after
-  any clean bot exit, including a SIGTERM-triggered one.
+- **Boothook trick** (needed whenever the instance is started OUTSIDE market
+  hours to do a deploy — e.g. after market close, or on a weekend/holiday to
+  prep for the next session). Without it: `alpha.service` is systemd-enabled so
+  it starts automatically on boot, `main.py` immediately sees the market is
+  closed, exits cleanly, and `shutdown_vm_on_exit: true` fires `sudo shutdown -h
+  now` within seconds — the box shuts itself down before an SSH session can even
+  be opened. To prevent this:
+  1. Push a `#cloud-boothook` script as the instance's user-data that stops
+     `alpha.service` on boot, before it gets a chance to run and self-shutdown.
+     Cloud-boothook scripts run very early in the boot sequence, ahead of normal
+     systemd service startup. Script content:
+     ```
+     #cloud-boothook
+     #!/bin/bash
+     systemctl stop alpha.service
+     ```
+  2. Base64-encode it and push via (this is an EC2 *mutating* call —
+     `ec2:ModifyInstanceAttribute` — currently blocked by the same
+     organization-level SCP deny as `DescribeInstances`; **the user must run
+     this command themselves**, I cannot run it):
+     ```powershell
+     $b64 = [Convert]::ToBase64String([System.IO.File]::ReadAllBytes("<path to the boothook script file>"))
+     aws ec2 modify-instance-attribute --instance-id i-0f3149bf3fc2e4779 --attribute userData --value $b64
+     ```
+  3. Start (or restart) the instance. This boot, `alpha.service` gets stopped
+     immediately instead of running main.py — gives a clean window to SSH in
+     and do the deploy work at any time of day.
+  4. **Important cleanup step, easy to forget**: once the deploy is done, either
+     clear the user-data back to empty/normal (another `modify-instance-attribute
+     --value ""` call, user-run) or explicitly `sudo systemctl start
+     alpha.service` again before the next real trading day — otherwise the
+     boothook keeps stopping the service on every future boot too, silently
+     disabling the bot going forward.
+- **AWS CLI access scope discovered 2026-09-17**: my `terraform-deploy` IAM
+  identity has an explicit org-level SCP deny covering at least
+  `ec2:DescribeInstances` and `ec2:ModifyInstanceAttribute` — likely all EC2
+  read/write calls are blocked for me now, not just the ones tried so far. Don't
+  assume any new `aws ec2 ...` call will work; expect to hand it to the user.
