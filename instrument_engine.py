@@ -557,9 +557,10 @@ class InstrumentEngine:
 
         self.store.close_trade(open_trade.id, result.price)
         pnl = (result.price - entry_price) * open_trade.quantity
-        logger.info("%s: closed %s entry=%.2f exit=%.2f pnl=%.2f",
-                    self.cfg.name, open_trade.symbol, entry_price, result.price, pnl)
+        new_capital = self.store.update_capital(pnl)
+        logger.info("%s: closed %s entry=%.2f exit=%.2f pnl=%.2f capital=%.2f",
+                    self.cfg.name, open_trade.symbol, entry_price, result.price, pnl, new_capital)
         self.notifier.send(
             f"EXIT [{reason}]: {self.cfg.name} {open_trade.symbol} "
-            f"entry={entry_price:.2f} exit={result.price:.2f} pnl={pnl:.2f}"
+            f"entry={entry_price:.2f} exit={result.price:.2f} pnl={pnl:.2f} | capital={new_capital:.2f}"
         )

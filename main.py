@@ -63,9 +63,11 @@ def main(check_holiday: bool = True) -> int:
     signal.signal(signal.SIGTERM, _handle_shutdown)
 
     notifier = TelegramNotifier.from_env()
-    notifier.send("EC2 STARTED: bot process starting up.")
 
     config = AppConfig.load()
+    store = TradeStore()
+    opening_capital = store.get_capital(config.starting_capital)
+    notifier.send(f"EC2 STARTED: bot process starting up. Opening capital: Rs {opening_capital:,.2f}")
 
     if check_holiday:
         current_year = date.today().year
@@ -101,7 +103,6 @@ def main(check_holiday: bool = True) -> int:
         notifier.send("ERROR: failed to connect to broker. Bot exiting.")
         return 1
 
-    store = TradeStore()
     risk = RiskManager(config.risk, store)
 
     engines = [
@@ -158,6 +159,14 @@ def main(check_holiday: bool = True) -> int:
             f"WARNING: exiting with {len(open_positions)} open position(s) still tracked: "
             + ", ".join(f"{p.instrument}:{p.symbol}" for p in open_positions)
         )
+
+    trades_today = store.trades_today()
+    todays_pnl = store.realized_pnl_today()
+    closing_capital = store.get_capital(config.starting_capital)
+    notifier.send(
+        f"TODAY SUMMARY: opening=Rs {opening_capital:,.2f} | trades={len(trades_today)} | "
+        f"pnl={'+' if todays_pnl >= 0 else ''}Rs {todays_pnl:,.2f} | closing=Rs {closing_capital:,.2f}"
+    )
 
     logger.info("Shutdown complete.")
     notifier.send("Bot shutting down (market closed / loop ended).")

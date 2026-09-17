@@ -205,6 +205,11 @@ class AppConfig:
     skipped entirely rather than chased late."""
     pullback_extended_threshold_points: float
 
+    starting_capital: float
+    """Seed value for the account capital ledger (state.py's TradeStore.get_capital),
+    used only the very first time it's ever read -- capital compounds across days
+    from then on, it does not reset to this value each morning."""
+
     shutdown_vm_on_exit: bool
     """When true, main.py powers off the machine it's running on after any clean
     exit (holiday, weekend, or market closed for the day) -- for a VM that's meant
@@ -280,6 +285,7 @@ class AppConfig:
             momentum_exit_points=_parse_positive_float(raw, "momentum_exit_points", 60.0),
             pullback_entry_enabled=bool(raw.get("pullback_entry_enabled", False)),
             pullback_extended_threshold_points=_parse_positive_float(raw, "pullback_extended_threshold_points", 100.0),
+            starting_capital=_parse_positive_float(raw, "starting_capital", 200000.0),
             shutdown_vm_on_exit=bool(raw.get("shutdown_vm_on_exit", False)),
             risk=RiskConfig(
                 daily_loss_limit=float(raw["risk"]["daily_loss_limit"]),

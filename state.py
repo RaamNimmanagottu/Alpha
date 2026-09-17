@@ -33,6 +33,17 @@ CREATE TABLE IF NOT EXISTS trades (
 );
 """
 
+# Single-row table: current account capital, starting from config.starting_capital
+# the first time it's ever read, then updated in place after every closed trade.
+# Persists across restarts/days by design -- capital compounds day over day, it
+# does not reset each morning.
+ACCOUNT_SCHEMA = """
+CREATE TABLE IF NOT EXISTS account (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    capital REAL NOT NULL
+);
+"""
+
 # Columns added after the original schema -- migrated onto an existing database
 # automatically in __init__ rather than requiring anyone to delete/recreate it.
 _MIGRATION_COLUMNS = {
@@ -89,6 +100,7 @@ class TradeStore:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
             conn.execute(SCHEMA)
+            conn.execute(ACCOUNT_SCHEMA)
             existing_cols = {row["name"] for row in conn.execute("PRAGMA table_info(trades)")}
             for col, col_type in _MIGRATION_COLUMNS.items():
                 if col not in existing_cols:
@@ -103,6 +115,33 @@ class TradeStore:
             conn.commit()
         finally:
             conn.close()
+
+    def get_capital(self, starting_capital: float) -> float:
+        """Current account capital. On first-ever call (no row yet), seeds it with
+        `starting_capital` and returns that -- every later call ignores the
+        argument and just returns whatever's persisted, since capital compounds
+        across days rather than resetting to `starting_capital` each morning."""
+        with self._connect() as conn:
+            row = conn.execute("SELECT capital FROM account WHERE id=1").fetchone()
+            if row is not None:
+                return float(row["capital"])
+            conn.execute("INSERT INTO account (id, capital) VALUES (1, ?)", (starting_capital,))
+            return starting_capital
+
+    def update_capital(self, delta: float) -> float:
+        """Adds `delta` (a trade's pnl) to the current capital and returns the new
+        total. Assumes get_capital() (or a prior update_capital()) has already
+        seeded the row -- called only after a trade closes, by which point the
+        bot has always already read the starting capital at least once."""
+        with self._connect() as conn:
+            row = conn.execute("SELECT capital FROM account WHERE id=1").fetchone()
+            new_capital = float(row["capital"]) + delta if row is not None else delta
+            conn.execute(
+                "INSERT INTO account (id, capital) VALUES (1, ?) "
+                "ON CONFLICT(id) DO UPDATE SET capital=excluded.capital",
+                (new_capital,),
+            )
+            return new_capital
 
     def open_trade(
         self,

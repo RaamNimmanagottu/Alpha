@@ -64,6 +64,12 @@ momentum_exit_points: 60
 pullback_entry_enabled: true
 pullback_extended_threshold_points: 100
 
+# Seed value for the account capital ledger (data/trades.db, table "account") --
+# only used the very first time it's ever read. From then on capital compounds
+# across days (each trade's pnl adds/subtracts from it); it does NOT reset to
+# this value every morning.
+starting_capital: 200000
+
 # VM cost savings: on a Linux VM that's meant to auto-start each morning, this
 # powers the machine off after any clean exit (holiday, weekend, or market closed
 # for the day) -- so it doesn't sit running (and billing) the rest of the day.
