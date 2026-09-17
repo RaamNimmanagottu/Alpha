@@ -102,6 +102,14 @@ class InstrumentEngine:
             lookback_days=hist_cfg.lookback_days,
         )
 
+    def prefetch_candles(self) -> None:
+        """Warm the historical-candle cache while waiting for market open, so the
+        first run_once() after open doesn't pay for a fresh fetch (up to 100 days,
+        on a never-before-run instrument) on the clock. Safe to call on every
+        before-open poll cycle -- update_historical_data() already throttles
+        itself to one real fetch per candle interval."""
+        self._get_candles()
+
     def run_once(self) -> None:
         now = datetime.now()
 

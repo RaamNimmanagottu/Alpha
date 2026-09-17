@@ -123,6 +123,16 @@ def main(check_holiday: bool = True) -> int:
                 logger.info("Started before market open (opens %s) -- waiting.", config.market.open_time)
                 notifier.send(f"Bot started before market open (opens {config.market.open_time}). Waiting.")
                 notified_waiting_for_open = True
+            for engine in engines:
+                try:
+                    engine.prefetch_candles()
+                except Exception:
+                    # Same reasoning as the main run_once() loop below -- a fetch
+                    # hiccup for one instrument must never block the others, and
+                    # this is just a cache warm-up, not required for correctness
+                    # (run_once() will fetch again after open if this didn't land).
+                    logger.exception("%s: prefetch_candles() failed during before_open wait, continuing",
+                                      engine.cfg.name)
             time.sleep(BEFORE_OPEN_POLL_SECONDS)
             continue
 
