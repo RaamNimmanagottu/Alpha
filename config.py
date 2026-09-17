@@ -49,6 +49,19 @@ def _parse_pct(raw: dict, key: str, default: float) -> float:
     return value
 
 
+_VALID_SIGNAL_STRATEGIES = ("ema_crossover", "rsi_oversold")
+
+
+def _parse_signal_strategy(instrument_raw: dict) -> str:
+    strategy = instrument_raw.get("signal_strategy", "ema_crossover")
+    if strategy not in _VALID_SIGNAL_STRATEGIES:
+        raise ValueError(
+            f"config.yaml: instrument {instrument_raw.get('name')!r} has signal_strategy="
+            f"{strategy!r}, must be one of {_VALID_SIGNAL_STRATEGIES}"
+        )
+    return strategy
+
+
 @dataclass(frozen=True)
 class Credentials:
     api_key: str
@@ -86,6 +99,12 @@ class InstrumentConfig:
     """Separate from index_token: NSE indices use a distinct token for historical
     candle data (e.g. 99926000 for NIFTY) from the one used for LTP quotes (e.g.
     26000) -- the LTP token silently returns zero candles from getCandleData."""
+    signal_strategy: str
+    """Which signal generator this instrument uses (see instrument_engine.py's
+    SIGNAL_STRATEGIES registry) -- different instruments genuinely need
+    different signals. NIFTY's backtested winner (EMA9/21 crossover) actually
+    LOSES money on BANKNIFTY; RSI overbought/oversold wins there instead. Not a
+    one-size-fits-all setting -- validate per instrument before choosing."""
     lot_size: int
     quantity_lots: int
     buy_strike_offset: float
@@ -239,6 +258,7 @@ class AppConfig:
                 exchange_index_symbol=i["exchange_index_symbol"],
                 index_token=i.get("index_token"),
                 candle_token=str(i["candle_token"]),
+                signal_strategy=_parse_signal_strategy(i),
                 lot_size=int(i["lot_size"]),
                 quantity_lots=int(i["quantity_lots"]),
                 buy_strike_offset=float(i["buy_strike_offset"]),

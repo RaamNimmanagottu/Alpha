@@ -93,17 +93,23 @@ historical_data:
   lookback_days: 100            # size of the initial backfill; confirmed to work in one request
   storage_dir: "data/historical"
 
-# Strategy: EMA(9)/EMA(21) crossover on 5-minute candles (alpha/ema_crossover_signal.py).
-# Backtested as the single best performer out of 23 strategies/variants tested on
-# 1000 days of NIFTY data (backtest/run_strategy_comparison.py): 6,350 points total,
-# 46.8% win rate, unfiltered -- no support/resistance gate, no ADX/trend filter,
-# since the raw crossover was what actually won. Only NIFTY is live -- BANKNIFTY was
-# never backtested with this strategy and is deliberately left out until it is.
+# Each instrument uses whatever signal_strategy was actually validated for IT --
+# never assume one strategy transfers across instruments. NIFTY: EMA(9)/EMA(21)
+# crossover, backtested as the single best performer out of 27 strategies/variants
+# tested on 1000 days of NIFTY data (legacy/backtest/run_strategy_comparison.py):
+# 6,350 points total, 46.8% win rate, unfiltered. BANKNIFTY: that same EMA9/21
+# crossover LOSES money on BANKNIFTY (-1268pts backtested) -- RSI(14)
+# overbought/oversold wins there instead (+2601pts, 56.3% win rate, best of 26
+# tested). BANKNIFTY's backtest is only ~100 days (Angel One's historical API
+# caps 5-min data there; NIFTY's 1000-day dataset was accumulated over time, not
+# fetched in one call) -- treat its numbers as a starting point to refine with
+# more data, not NIFTY-level evidence.
 instruments:
   - name: NIFTY
     exchange_index_symbol: NIFTY
     index_token: "99926000"          # used for LTP quotes
     candle_token: "99926000"         # used for historical candle data (getCandleData)
+    signal_strategy: ema_crossover
     lot_size: 65                # NSE lot size as of 2026 -- verify before every expiry cycle, NSE revises periodically
     quantity_lots: 1
     buy_strike_offset: 0        # ATM -- matches the ATM assumption used throughout backtesting
@@ -114,11 +120,28 @@ instruments:
     entry_start_time: "09:30"        # no entries before this -- matches the backtest's ENTRY_START_TIME
     entry_cutoff_time: "14:50"       # no new entries after this -- matches the backtest's FORCE_EXIT_TIME (no separate buffer)
     # No new entries at all on the contract's own expiry day, regardless of the
-    # cutoff above (see alpha/instrument_engine.py) -- real 0DTE gamma/spread risk
+    # cutoff above (see instrument_engine.py) -- real 0DTE gamma/spread risk
     # the backtest can't see. This is a deliberate deviation from what was
     # backtested (the 1000-day backtest traded straight through expiry days).
     force_exit_time: "14:50"         # force-close any open position at/after this time -- matches the backtest
     force_exit_time_expiry_day: "14:45"     # safety fallback: force-close if a position is somehow still open on expiry day
+
+  - name: BANKNIFTY
+    exchange_index_symbol: BANKNIFTY
+    index_token: "99926009"
+    candle_token: "99926009"
+    signal_strategy: rsi_oversold     # NOT ema_crossover -- backtested to lose money on BANKNIFTY, see note above
+    lot_size: 30                 # confirmed live from the instrument master -- verify before every expiry cycle
+    quantity_lots: 1
+    buy_strike_offset: 0
+    sell_strike_offset: 0
+    take_profit_points: 150      # backtested best for RSI on BANKNIFTY: 56.3% WR, +2601pts over ~100 days
+    take_profit_premium_pct: 10  # not separately backtested for BANKNIFTY -- reusing NIFTY's value as a starting point
+    stop_loss_points: 100
+    entry_start_time: "09:30"
+    entry_cutoff_time: "14:50"
+    force_exit_time: "14:50"
+    force_exit_time_expiry_day: "14:45"
 
 market:
   open_time: "09:22"

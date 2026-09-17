@@ -8,13 +8,23 @@ import pandas as pd
 
 from broker import AngelOneBroker, OrderRejected, OrderResult
 from config import ROOT_DIR, AppConfig, InstrumentConfig
-from ema_crossover_signal import get_signal
+from ema_crossover_signal import get_signal as _ema_crossover_get_signal
 from historical_data import update_historical_data
 from notifier import TelegramNotifier
 from risk import RiskManager
+from rsi_oversold_signal import get_signal as _rsi_oversold_get_signal
 from state import TradeStore
 
 logger = logging.getLogger("alpha.engine")
+
+SIGNAL_STRATEGIES = {
+    "ema_crossover": _ema_crossover_get_signal,
+    "rsi_oversold": _rsi_oversold_get_signal,
+}
+"""Per-instrument signal generator dispatch (config.yaml's signal_strategy
+field, validated in config.py). Different instruments genuinely need different
+signals -- NIFTY's backtested EMA9/21 winner loses money on BANKNIFTY, where
+RSI overbought/oversold wins instead. Never assume one strategy transfers."""
 
 
 class InstrumentEngine:
@@ -45,6 +55,7 @@ class InstrumentEngine:
         self.index_token = cfg.index_token or broker.token_lookup(cfg.exchange_index_symbol)
         if not self.index_token:
             raise RuntimeError(f"Could not resolve index token for {cfg.exchange_index_symbol}")
+        self._get_signal = SIGNAL_STRATEGIES[cfg.signal_strategy]
 
         interval_suffix = app_cfg.historical_data.interval.lower()
         self._historical_excel_path = (
@@ -107,7 +118,7 @@ class InstrumentEngine:
             force_exit = self.cfg.force_exit_time_expiry_day if expiry_today else self.cfg.force_exit_time
             option_ltp = self.broker.underlying_price("NFO", open_trade.symbol, open_trade.token)
             candles = self._get_candles()
-            latest_signal = get_signal(self.cfg.exchange_index_symbol, candles)
+            latest_signal = self._get_signal(self.cfg.exchange_index_symbol, candles)
             expiry_str = atm_df["expiry"].iloc[0]
             current_iv = self._maybe_fetch_iv(open_trade, expiry_str)
             self._manage_open_trade(
@@ -139,7 +150,7 @@ class InstrumentEngine:
             return
 
         candles = self._get_candles()
-        signal = get_signal(self.cfg.exchange_index_symbol, candles)
+        signal = self._get_signal(self.cfg.exchange_index_symbol, candles)
         logger.info("%s signal: %s (ltp=%.1f)", self.cfg.name, signal.direction, ltp)
 
         if signal.direction == "WAIT":
@@ -213,7 +224,7 @@ class InstrumentEngine:
         # A fresh signal in the opposite direction invalidates the setup that
         # justified waiting for this pullback in the first place.
         candles = self._get_candles()
-        latest_signal = get_signal(self.cfg.exchange_index_symbol, candles)
+        latest_signal = self._get_signal(self.cfg.exchange_index_symbol, candles)
         opposite = (
             (direction == "CE" and latest_signal.direction == "SELL")
             or (direction == "PE" and latest_signal.direction == "BUY")
