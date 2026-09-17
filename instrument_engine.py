@@ -10,6 +10,7 @@ from broker import AngelOneBroker, OrderRejected, OrderResult
 from config import ROOT_DIR, AppConfig, InstrumentConfig
 from ema_crossover_signal import get_signal as _ema_crossover_get_signal
 from historical_data import update_historical_data
+from keltner_channel_signal import get_signal as _keltner_channel_get_signal
 from notifier import TelegramNotifier
 from risk import RiskManager
 from rsi_oversold_signal import get_signal as _rsi_oversold_get_signal
@@ -20,11 +21,16 @@ logger = logging.getLogger("alpha.engine")
 SIGNAL_STRATEGIES = {
     "ema_crossover": _ema_crossover_get_signal,
     "rsi_oversold": _rsi_oversold_get_signal,
+    "keltner_channel": _keltner_channel_get_signal,
 }
 """Per-instrument signal generator dispatch (config.yaml's signal_strategy
 field, validated in config.py). Different instruments genuinely need different
-signals -- NIFTY's backtested EMA9/21 winner loses money on BANKNIFTY, where
-RSI overbought/oversold wins instead. Never assume one strategy transfers."""
+signals, each independently backtested on 1000 days of real data (see
+RULES.md): NIFTY uses EMA9/21 crossover, BANKNIFTY uses the SAME EMA9/21
+crossover but different TP/SL (an earlier RSI-based recommendation was found
+wrong once tested on the full 1000 days, not just 100), and FINNIFTY uses
+Keltner Channel Breakout (EMA and RSI both underperform on it). Never assume
+one strategy transfers to another instrument without backtesting it there."""
 
 
 class InstrumentEngine:

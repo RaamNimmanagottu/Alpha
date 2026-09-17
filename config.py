@@ -49,7 +49,7 @@ def _parse_pct(raw: dict, key: str, default: float) -> float:
     return value
 
 
-_VALID_SIGNAL_STRATEGIES = ("ema_crossover", "rsi_oversold")
+_VALID_SIGNAL_STRATEGIES = ("ema_crossover", "rsi_oversold", "keltner_channel")
 
 
 def _parse_signal_strategy(instrument_raw: dict) -> str:

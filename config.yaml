@@ -130,14 +130,31 @@ instruments:
     exchange_index_symbol: BANKNIFTY
     index_token: "99926009"
     candle_token: "99926009"
-    signal_strategy: rsi_oversold     # NOT ema_crossover -- backtested to lose money on BANKNIFTY, see note above
+    signal_strategy: ema_crossover  # SAME as NIFTY -- an earlier RSI-based recommendation was found wrong on the full 1000-day backtest (only looked good on a 100-day sample), see RULES.md Lesson #1
     lot_size: 30                 # confirmed live from the instrument master -- verify before every expiry cycle
     quantity_lots: 1
     buy_strike_offset: 0
     sell_strike_offset: 0
-    take_profit_points: 150      # backtested best for RSI on BANKNIFTY: 56.3% WR, +2601pts over ~100 days
+    take_profit_points: 300      # backtested on full 1000 days: 45.7% WR, +9154.60pts (see RULES.md)
     take_profit_premium_pct: 10  # not separately backtested for BANKNIFTY -- reusing NIFTY's value as a starting point
-    stop_loss_points: 100
+    stop_loss_points: 150
+    entry_start_time: "09:30"
+    entry_cutoff_time: "14:50"
+    force_exit_time: "14:50"
+    force_exit_time_expiry_day: "14:45"
+
+  - name: FINNIFTY
+    exchange_index_symbol: FINNIFTY
+    index_token: "99926037"
+    candle_token: "99926037"
+    signal_strategy: keltner_channel  # NOT ema_crossover or rsi_oversold -- both underperform on FINNIFTY, see RULES.md
+    lot_size: 60                 # confirmed live from the instrument master -- verify before every expiry cycle
+    quantity_lots: 1
+    buy_strike_offset: 0
+    sell_strike_offset: 0
+    take_profit_points: 150      # backtested on full 1000 days: 49.4% WR, +8623.00pts, robust across nearby TP/SL too (see RULES.md)
+    take_profit_premium_pct: 10  # not separately backtested for FINNIFTY -- reusing NIFTY's value as a starting point
+    stop_loss_points: 75
     entry_start_time: "09:30"
     entry_cutoff_time: "14:50"
     force_exit_time: "14:50"
