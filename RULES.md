@@ -3,7 +3,7 @@
 Living document of every finalized rule/decision, so nothing has to be re-derived
 from chat history. Update this file whenever a new rule is validated and locked in.
 
-Last updated: 2026-09-17 (after `phase-2` tag; added CRUDEOIL/GOLD backtest findings).
+Last updated: 2026-09-17 (phase-2 deployed to EC2; systemd startup grace period added).
 
 ---
 
@@ -250,16 +250,20 @@ decision to make consciously, not accidentally.
 - Local build → validate (unit tests, backtests) → commit → merge → push to
   GitHub can proceed without asking each time.
 - **Deploying to the live EC2 instance (`i-0f3149bf3fc2e4779`) always requires
-  explicit user approval first** — even after full local validation passes. The
-  EC2 instance stays pinned to the last explicitly-approved state (currently
-  `phase-1`) until told otherwise. (See memory: feedback-ask-before-ec2-deploy)
+  explicit user approval first** — even after full local validation passes.
+  (See memory: feedback-ask-before-ec2-deploy)
+- **EC2 is now on `phase-2`** (deployed 2026-09-17): NIFTY (EMA crossover),
+  BANKNIFTY (EMA crossover, TP300/SL150), FINNIFTY (Keltner Channel Breakout,
+  TP150/SL75) all verified loading correctly on the server. GOLD/CRUDEOIL
+  (documented-only) are NOT part of this deploy.
 - After every `config.yaml` deploy to EC2, must `sed` `shutdown_vm_on_exit` back
   to `true` on the server — the local file's committed default is `false` (safe
   for a dev machine) and silently overwrites the production value otherwise. (See
   memory: project-shutdown-vm-config-gotcha)
 
 ### Deployment mechanics (so this never has to be re-derived)
-- Instance: `i-0f3149bf3fc2e4779`, user `admin`, SSH key
+- Instance: `i-0f3149bf3fc2e4779` ("alpha-trading-bot"), region
+  **ap-southeast-2** (Sydney), user `admin`, SSH key
   `C:\Users\DELL\.ssh\alpha-key.pem`.
 - **Public IP is NOT static** — the instance uses auto-assign public IP (free
   while stopped; an Elastic IP would cost ~$3.60/month, deliberately not used).
@@ -273,46 +277,46 @@ decision to make consciously, not accidentally.
 - Remote app path: `/home/admin/alpha`. Service: `alpha.service` (systemd) —
   `sudo systemctl restart alpha.service` / `sudo systemctl status alpha.service`
   / `sudo journalctl -u alpha.service -f` to tail logs.
-- Typical deploy flow once IP is known: `scp` the changed files (or
-  `git pull` on the box if it has repo + GitHub access set up) into
-  `/home/admin/alpha`, re-apply the `shutdown_vm_on_exit: true` sed fix to
-  `config.yaml`, restart the service, watch logs/Telegram for the startup
-  message to confirm a clean boot.
-- **Boothook trick** (needed whenever the instance is started OUTSIDE market
-  hours to do a deploy — e.g. after market close, or on a weekend/holiday to
-  prep for the next session). Without it: `alpha.service` is systemd-enabled so
-  it starts automatically on boot, `main.py` immediately sees the market is
-  closed, exits cleanly, and `shutdown_vm_on_exit: true` fires `sudo shutdown -h
-  now` within seconds — the box shuts itself down before an SSH session can even
-  be opened. To prevent this:
-  1. Push a `#cloud-boothook` script as the instance's user-data that stops
-     `alpha.service` on boot, before it gets a chance to run and self-shutdown.
-     Cloud-boothook scripts run very early in the boot sequence, ahead of normal
-     systemd service startup. Script content:
-     ```
-     #cloud-boothook
-     #!/bin/bash
-     systemctl stop alpha.service
-     ```
-  2. Base64-encode it and push via (this is an EC2 *mutating* call —
-     `ec2:ModifyInstanceAttribute` — currently blocked by the same
-     organization-level SCP deny as `DescribeInstances`; **the user must run
-     this command themselves**, I cannot run it):
-     ```powershell
-     $b64 = [Convert]::ToBase64String([System.IO.File]::ReadAllBytes("<path to the boothook script file>"))
-     aws ec2 modify-instance-attribute --instance-id i-0f3149bf3fc2e4779 --attribute userData --value $b64
-     ```
-  3. Start (or restart) the instance. This boot, `alpha.service` gets stopped
-     immediately instead of running main.py — gives a clean window to SSH in
-     and do the deploy work at any time of day.
-  4. **Important cleanup step, easy to forget**: once the deploy is done, either
-     clear the user-data back to empty/normal (another `modify-instance-attribute
-     --value ""` call, user-run) or explicitly `sudo systemctl start
-     alpha.service` again before the next real trading day — otherwise the
-     boothook keeps stopping the service on every future boot too, silently
-     disabling the bot going forward.
-- **AWS CLI access scope discovered 2026-09-17**: my `terraform-deploy` IAM
-  identity has an explicit org-level SCP deny covering at least
-  `ec2:DescribeInstances` and `ec2:ModifyInstanceAttribute` — likely all EC2
-  read/write calls are blocked for me now, not just the ones tried so far. Don't
-  assume any new `aws ec2 ...` call will work; expect to hand it to the user.
+- `/home/admin/alpha` is **NOT a git repo** on the server (confirmed 2026-09-17)
+  — deploys are plain `scp` of individual changed files, not `git pull`. Deploy
+  flow: back up the files about to be overwritten (e.g. to
+  `~/alpha_phase1_backup/`), `scp` the new versions from a local
+  `git show <tag>:<path>` extraction (PowerShell's `Out-File` adds a UTF-8 BOM
+  by default — write with `[System.IO.File]::WriteAllText(path, content, (New-Object
+  System.Text.UTF8Encoding($false)))` instead, or verify with a byte check,
+  since a BOM can break Python source), re-apply the `shutdown_vm_on_exit: true`
+  sed fix to `config.yaml`, verify with a syntax check (`ast.parse`) and a
+  config load check (`AppConfig.load()`) before touching the service, then
+  restart/start it and watch logs/Telegram for a clean boot.
+- **The 2026-09-17 "instance won't SSH" incident — real root cause, corrected**:
+  spent a long session assuming this was a self-shutdown timing race
+  (`alpha.service` starting, seeing the market closed, and shutting the VM down
+  before SSH could connect). The actual cause was much simpler: the security
+  group (`sg-0d032cf598b3a6011`, region **ap-southeast-2** — not ap-south-1,
+  correct that earlier assumption too) only allow-listed two stale `/32` IPs
+  (`49.43.230.0/32`, `49.43.230.153/32`) for port 22, and the dev machine's
+  actual dynamic ISP IP had since moved to `49.43.230.200` — outside both. Every
+  SSH attempt timed out at the network level regardless of the bot's timing.
+  **If SSH ever times out (not "connection refused") on this instance, check
+  the security group's inbound rule for port 22 against the current public IP
+  FIRST**, before assuming it's a shutdown race. (`https://api.ipify.org` or
+  similar to check the current outbound IP.)
+- **AWS CLI mutating calls are blocked account-wide, not just for me**:
+  confirmed 2026-09-17 that `ec2:ModifyInstanceAttribute` (and `DescribeInstances`)
+  are denied by an org-level SCP for the `terraform-deploy` IAM identity **even
+  when the user runs the exact same command themselves** from their own
+  terminal — this is a hard account/identity-level restriction, not a
+  Claude-Code-classifier or "who's calling" issue. Don't try to route around it
+  by having the user re-run a blocked `aws ec2 ...` command; it will fail for
+  them too. The boothook-via-user-data approach (previously documented here)
+  is DEAD for this account unless the org SCP changes or a different AWS
+  Console login (not this IAM user) is used for that one action.
+- **Permanent fix actually adopted (2026-09-17), replacing the boothook trick**:
+  added `ExecStartPre=/bin/sleep 120` to `/etc/systemd/system/alpha.service`.
+  `alpha.service` stays enabled (auto-starts on boot, as before — no manual
+  daily start step needed), but now waits 2 minutes after boot before `main.py`
+  even runs. This gives a reliable window to SSH in (once the security group
+  allows the current IP — see above) and stop/inspect the service before it
+  can reach the market-closed self-shutdown path, on ANY boot, without needing
+  the user-data/boothook dance at all. Negligible cost on a real trading day
+  (started well before market open anyway).
