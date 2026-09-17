@@ -257,3 +257,29 @@ decision to make consciously, not accidentally.
   to `true` on the server — the local file's committed default is `false` (safe
   for a dev machine) and silently overwrites the production value otherwise. (See
   memory: project-shutdown-vm-config-gotcha)
+
+### Deployment mechanics (so this never has to be re-derived)
+- Instance: `i-0f3149bf3fc2e4779`, user `admin`, SSH key
+  `C:\Users\DELL\.ssh\alpha-key.pem`.
+- **Public IP is NOT static** — the instance uses auto-assign public IP (free
+  while stopped; an Elastic IP would cost ~$3.60/month, deliberately not used).
+  The IP changes every stop/start cycle, so old `known_hosts` entries go stale
+  and cannot be relied on. My AWS CLI identity (`terraform-deploy`) has an
+  **explicit organization-level SCP deny on `ec2:DescribeInstances`** (and
+  likely other EC2 read calls) — I cannot look up the current IP myself. The
+  user must supply it (or run
+  `aws ec2 describe-instances --instance-ids i-0f3149bf3fc2e4779 --query "Reservations[0].Instances[0].[State.Name,PublicIpAddress]" --output text`
+  themselves) at the start of every deploy session.
+- Remote app path: `/home/admin/alpha`. Service: `alpha.service` (systemd) —
+  `sudo systemctl restart alpha.service` / `sudo systemctl status alpha.service`
+  / `sudo journalctl -u alpha.service -f` to tail logs.
+- Typical deploy flow once IP is known: `scp` the changed files (or
+  `git pull` on the box if it has repo + GitHub access set up) into
+  `/home/admin/alpha`, re-apply the `shutdown_vm_on_exit: true` sed fix to
+  `config.yaml`, restart the service, watch logs/Telegram for the startup
+  message to confirm a clean boot.
+- Boothook trick (only needed if the box self-shuts-down before you can get in):
+  stop `alpha.service` via a `#cloud-boothook` script pushed through
+  `aws ec2 modify-instance-attribute --user-data` (base64-encoded), since
+  `shutdown_vm_on_exit: true` triggers `sudo shutdown -h now` immediately after
+  any clean bot exit, including a SIGTERM-triggered one.
