@@ -3,7 +3,9 @@
 Living document of every finalized rule/decision, so nothing has to be re-derived
 from chat history. Update this file whenever a new rule is validated and locked in.
 
-Last updated: 2026-09-17 (phase-2 deployed to EC2; systemd startup grace period added).
+Last updated: 2026-09-18 (day-1 live trading review; max_trades_per_day raised
+to 9; RELIANCE stock-options findings; 3 more entry-timing ideas tested and
+rejected).
 
 ---
 
@@ -120,6 +122,36 @@ accidentally.
   setting). Same day-end force-exit gap as CRUDEOIL, even more extreme.
 - **Lot size**: not yet confirmed from live instrument master (needed before any
   code is built).
+
+### RELIANCE (NSE stock options, OPTSTK) — documented only, NOT built in code
+- **Why this category**: unlike NIFTY/BANKNIFTY/FINNIFTY (computed indices,
+  never directly traded, always volume=0), a stock's OWN underlying equity
+  trades on the NSE cash market with real volume — RELIANCE's 1000-day
+  cumulative volume was 8.65 billion shares, vs. zero for any index.
+- **Signal**: Keltner Channel Breakout — beat Donchian (2nd, +387.02) and
+  Opening Range Breakout 15min (3rd, +336.90). VWAP Cross was actually
+  NEGATIVE here (-87.85) despite real volume being available — confirms
+  again (as with GOLD/CRUDEOIL) that volume alone doesn't make VWAP the best
+  strategy; it just makes it computable at all.
+- **Take-profit**: 25 points; **Stop-loss**: 12 points (current price ~1243,
+  ATR(14) avg 2.56 — TP is ~9.8x ATR, SL ~4.7x ATR).
+- **Backtest**: 1000 days (50,613 candles, 2023-12-26 to 2026-09-18, real
+  volume sum 8.65 billion), 866 trades, 51.62% win rate, +612.80 points, avg
+  +0.71 pts/trade. TP/SL tuned 8/4 up to 40/20 — total points peak clearly at
+  25/12, decline on both sides (30/15: +558.74, 40/20: +435.38) — a genuine
+  plateau, not a runaway/overfit edge, same pattern as every other instrument
+  tuned so far.
+- **Force-exit risk is much milder here than on commodities**: worst single
+  trade lost 12.88 points at the chosen 25/12 setting — close to the nominal
+  SL, NOT the 4-13x overshoot seen on CRUDEOIL/GOLD. Equity options behave
+  more like the indices in this respect.
+- **New considerations before ever building code for stock options**:
+  - Stock F&O typically has MONTHLY expiry only (no weekly), unlike
+    NIFTY/BANKNIFTY/FINNIFTY — changes theta/rollover assumptions.
+  - Lot size not yet confirmed from live instrument master.
+  - Only RELIANCE tested so far (highest-liquidity pick) — per this project's
+    own rule (Lesson #1), do NOT assume this transfers to any other stock
+    without its own 1000-day backtest.
 
 ### Commodities — general findings
 - Confirms the project's core lesson yet again: a 4th and 5th different winning
@@ -239,7 +271,21 @@ accidentally.
 3. **Fighting signal lag with more lagging confirmation makes it worse, not
    better** — multi-timeframe (1min+3min+5min "same trend") confirmation was
    tested and made results significantly worse (-489pts vs +86pts for 1-min
-   alone), because the "confirmation" timeframe is itself lagging.
+   alone), because the "confirmation" timeframe is itself lagging. Reconfirmed
+   2026-09-18 on NIFTY's live EMA crossover three different ways, all on the
+   full 1000-day dataset: (a) waiting for a pullback to the signal candle's
+   own MIDPOINT for every signal (not just extended ones): 806 trades, 42.06%
+   win, only +1183.60pts vs baseline's +6350.90; (b) requiring the crossover
+   to hold for 2/3/4 consecutive candles before acting: total points fell
+   monotonically as confirmation length grew (+5748, +4212, +3514 vs
+   baseline's +6350.90); (c) requiring the entry candle to open in the
+   signal's favor ("gap confirmation"): dropped ~50% of all signals and the
+   survivors still did far worse (+1622.30 vs +6350.90). All three ideas
+   sounded reasonable from a single live whipsaw trade that day, but the full
+   1000-day evidence says no every time -- the existing extended-candle-only
+   pullback logic (RULES.md section 4) remains the one confirmation-style
+   filter that actually helps, precisely because it's the only one validated
+   against the full history rather than a single day's anecdote.
 4. **Pivot-point "room to target" filtering doesn't have real predictive power**
    on this data — tested across multiple thresholds, all flat-to-worse than no
    filter.
