@@ -7,10 +7,14 @@ from datetime import date, datetime, time
 import pandas as pd
 
 from broker import AngelOneBroker, OrderRejected, OrderResult
+from cci_signal import get_signal as _cci_get_signal
 from config import ROOT_DIR, AppConfig, InstrumentConfig
 from ema_crossover_signal import get_signal as _ema_crossover_get_signal
+from ema_crossover_21_50_signal import get_signal as _ema_crossover_21_50_get_signal
+from ema_crossover_confirmed_signal import get_signal as _ema_crossover_confirmed_get_signal
 from historical_data import update_historical_data
 from keltner_channel_signal import get_signal as _keltner_channel_get_signal
+from momentum_zero_cross_signal import get_signal as _momentum_zero_cross_get_signal
 from notifier import TelegramNotifier
 from risk import RiskManager
 from rsi_oversold_signal import get_signal as _rsi_oversold_get_signal
@@ -22,15 +26,19 @@ SIGNAL_STRATEGIES = {
     "ema_crossover": _ema_crossover_get_signal,
     "rsi_oversold": _rsi_oversold_get_signal,
     "keltner_channel": _keltner_channel_get_signal,
+    "ema_crossover_21_50": _ema_crossover_21_50_get_signal,
+    "cci_overbought_oversold": _cci_get_signal,
+    "momentum_zero_cross": _momentum_zero_cross_get_signal,
+    "ema_crossover_confirmed": _ema_crossover_confirmed_get_signal,
 }
 """Per-instrument signal generator dispatch (config.yaml's signal_strategy
 field, validated in config.py). Different instruments genuinely need different
 signals, each independently backtested on 1000 days of real data (see
-RULES.md): NIFTY uses EMA9/21 crossover, BANKNIFTY uses the SAME EMA9/21
-crossover but different TP/SL (an earlier RSI-based recommendation was found
-wrong once tested on the full 1000 days, not just 100), and FINNIFTY uses
-Keltner Channel Breakout (EMA and RSI both underperform on it). Never assume
-one strategy transfers to another instrument without backtesting it there."""
+RULES.md): NIFTY/BANKNIFTY use EMA9/21 crossover, FINNIFTY/RELIANCE/SBIN use
+Keltner Channel Breakout, HDFCBANK uses EMA21/50, ICICIBANK uses CCI
+overbought/oversold, TCS uses Momentum zero-cross, INFY uses 2-candle
+confirmed EMA9/21. Never assume one strategy transfers to another instrument
+without backtesting it there."""
 
 
 class InstrumentEngine:

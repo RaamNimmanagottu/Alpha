@@ -3,8 +3,9 @@
 Living document of every finalized rule/decision, so nothing has to be re-derived
 from chat history. Update this file whenever a new rule is validated and locked in.
 
-Last updated: 2026-09-18 (day-1 live trading review; max_trades_per_day raised
-to 9; RELIANCE stock-options findings; 3 more entry-timing ideas tested and
+Last updated: 2026-09-18 (day-1 live trading review; max_trades_per_day
+raised 6->9->27; 6 stock-options instruments backtested and built in code
+for a month-long paper-trading experiment; 3 entry-timing ideas tested and
 rejected).
 
 ---
@@ -123,35 +124,68 @@ accidentally.
 - **Lot size**: not yet confirmed from live instrument master (needed before any
   code is built).
 
-### RELIANCE (NSE stock options, OPTSTK) — documented only, NOT built in code
+### Stock options (NSE OPTSTK) — 6 stocks, BUILT IN CODE 2026-09-18
 - **Why this category**: unlike NIFTY/BANKNIFTY/FINNIFTY (computed indices,
   never directly traded, always volume=0), a stock's OWN underlying equity
-  trades on the NSE cash market with real volume — RELIANCE's 1000-day
+  trades on the NSE cash market with real volume — e.g. RELIANCE's 1000-day
   cumulative volume was 8.65 billion shares, vs. zero for any index.
-- **Signal**: Keltner Channel Breakout — beat Donchian (2nd, +387.02) and
-  Opening Range Breakout 15min (3rd, +336.90). VWAP Cross was actually
-  NEGATIVE here (-87.85) despite real volume being available — confirms
-  again (as with GOLD/CRUDEOIL) that volume alone doesn't make VWAP the best
-  strategy; it just makes it computable at all.
-- **Take-profit**: 25 points; **Stop-loss**: 12 points (current price ~1243,
-  ATR(14) avg 2.56 — TP is ~9.8x ATR, SL ~4.7x ATR).
-- **Backtest**: 1000 days (50,613 candles, 2023-12-26 to 2026-09-18, real
-  volume sum 8.65 billion), 866 trades, 51.62% win rate, +612.80 points, avg
-  +0.71 pts/trade. TP/SL tuned 8/4 up to 40/20 — total points peak clearly at
-  25/12, decline on both sides (30/15: +558.74, 40/20: +435.38) — a genuine
-  plateau, not a runaway/overfit edge, same pattern as every other instrument
-  tuned so far.
-- **Force-exit risk is much milder here than on commodities**: worst single
-  trade lost 12.88 points at the chosen 25/12 setting — close to the nominal
-  SL, NOT the 4-13x overshoot seen on CRUDEOIL/GOLD. Equity options behave
-  more like the indices in this respect.
-- **New considerations before ever building code for stock options**:
-  - Stock F&O typically has MONTHLY expiry only (no weekly), unlike
-    NIFTY/BANKNIFTY/FINNIFTY — changes theta/rollover assumptions.
-  - Lot size not yet confirmed from live instrument master.
-  - Only RELIANCE tested so far (highest-liquidity pick) — per this project's
-    own rule (Lesson #1), do NOT assume this transfers to any other stock
-    without its own 1000-day backtest.
+- **Status**: all 6 below are live in `config.yaml` with `paper_trading: true`
+  — a deliberate one-month live-paper experiment (real market data, real
+  option premiums fetched live, zero real capital risk) rather than trusting
+  the backtest numbers alone. Review after ~1 month and prune whichever
+  underperform their own backtest expectations. New signal modules:
+  `ema_crossover_21_50_signal.py`, `cci_signal.py`,
+  `momentum_zero_cross_signal.py`, `ema_crossover_confirmed_signal.py`
+  (Keltner reuses the existing `keltner_channel_signal.py`).
+- **`max_trades_per_day` raised again, 9 -> 27** the same day these were
+  added: 9 instruments x `max_trades_per_instrument: 3` = 27, so the combined
+  cap still can't bind before an individual instrument's own limit (same
+  reasoning as the 6->9 raise earlier that day). `daily_loss_limit: 5000`
+  remains the real account-wide brake, not this trade-count cap.
+- **Backtest summary (1000 days each, 2023-12-26 to 2026-09-18)**:
+
+  | Stock | Signal | TP/SL | Lot size | Trades | Win% | Total pts |
+  |---|---|---|---|---|---|---|
+  | RELIANCE | Keltner Channel Breakout | 25/12 | 500 | 866 | 51.62% | +612.80 |
+  | HDFCBANK | EMA(21/50) Crossover | 60/29 | 650 | 488 | 53.28% | +212.09 |
+  | ICICIBANK | CCI(20) Overbought/Oversold | 45/22 | 700 | 1192 | 52.94% | +437.10 |
+  | TCS | Momentum(10) Zero-Cross | 90/45 | 225 | 1457 | 48.87% | +1244.60 |
+  | INFY | EMA(9/21) Confirmed (2-candle) | 35/17 | 400 | 826 | 51.57% | +613.60 |
+  | SBIN | Keltner Channel Breakout | 75/37 | 750 | 724 | 49.31% | +411.95 |
+
+  **5 different winning strategies across 6 stocks** (Keltner repeats for
+  RELIANCE and SBIN only) — reconfirms yet again that signals don't transfer,
+  now across 11 instruments total (3 indices + 2 commodities-documented-only
+  + 6 stocks).
+- **VWAP Cross was NOT the winner on any stock tested**, including RELIANCE
+  where it was actually negative (-87.85) despite real volume being
+  available — confirms again (as with GOLD/CRUDEOIL) that volume alone
+  doesn't make VWAP the best strategy; it just makes it computable at all.
+- **Confidence varies noticeably by stock** — most showed a clean single
+  TP/SL peak (RELIANCE, INFY, ICICIBANK), but HDFCBANK and TCS had noisier,
+  less monotonic TP/SL surfaces (HDFCBANK plateaued rather than peaking; TCS
+  bounced between two local peaks at 32/15 and 90/45 without a clean single
+  optimum — chose 90/45 for the better win-rate/avg-points trade-off, but
+  flag this as lower-confidence than the others). Treat HDFCBANK/TCS results
+  with a bit more skepticism than the rest until the paper-trading month
+  confirms them.
+- **Force-exit risk is much milder here than on commodities** (checked on
+  RELIANCE specifically): worst single trade lost 12.88 points at 25/12 —
+  close to the nominal SL, NOT the 4-13x overshoot seen on CRUDEOIL/GOLD.
+  Equity options behave more like the indices in this respect.
+- **RELIANCE capital estimate (Rs 2,00,000 start, 1000 days)**: ~Rs
+  3,53,487.50 final (+76.7%, ~23.2% approx CAGR, -10.73% max drawdown) --
+  but this used a 0.5-delta APPROXIMATION for option premium P&L (Angel
+  One's optionGreek API doesn't support individual stocks, and no historical
+  stock-option premium series was available to replay exactly). Treat as a
+  rough estimate, not the same precision as NIFTY/BANKNIFTY/FINNIFTY's real
+  option-premium-based numbers -- the live paper-trading month will give a
+  real answer.
+- **Stock F&O has MONTHLY expiry only** (no weekly), unlike
+  NIFTY/BANKNIFTY/FINNIFTY — different theta/rollover profile, not yet
+  separately analyzed.
+- **Lot sizes confirmed live from the instrument master** (2026-09-18):
+  RELIANCE 500, HDFCBANK 650, ICICIBANK 700, TCS 225, INFY 400, SBIN 750.
 
 ### Commodities — general findings
 - Confirms the project's core lesson yet again: a 4th and 5th different winning
@@ -172,9 +206,10 @@ accidentally.
 
 - `daily_loss_limit: 5000` — rupees, across ALL instruments combined; bot halts new
   entries for the rest of the day once breached.
-- `max_trades_per_day: 9` — combined across all instruments (raised from 6 on
-  2026-09-18; see the note in section 1 — was observed live to block healthy
-  instruments once a different one whipsawed through its own share of the cap).
+- `max_trades_per_day: 27` — combined across all instruments (raised 6 -> 9 ->
+  27 on 2026-09-18; see the note in section 1 — was observed live to block
+  healthy instruments once a different one whipsawed through its own share
+  of the cap, then raised again to keep pace with 6 new stock instruments).
 - `max_trades_per_instrument: 3` — per instrument, per day.
 - These are NOT modeled in `legacy/backtest/trade_simulator.py` — raw backtest
   numbers assume unlimited trades/day. Confirmed empirically (2024-02-29 case:
@@ -319,6 +354,14 @@ accidentally.
   BANKNIFTY (EMA crossover, TP300/SL150), FINNIFTY (Keltner Channel Breakout,
   TP150/SL75) all verified loading correctly on the server. GOLD/CRUDEOIL
   (documented-only) are NOT part of this deploy.
+- **Pending, not yet deployed to EC2 as of 2026-09-18 end of day**:
+  `max_trades_per_day` raise (6->9->27), the `prefetch_candles()` before-open
+  fix, and the 6 new stock instruments (RELIANCE, HDFCBANK, ICICIBANK, TCS,
+  INFY, SBIN) + their 4 new signal modules. All committed and pushed to
+  GitHub `main`. Needs explicit go-ahead before the next EC2 deploy (see
+  Rule #10) -- will also need `.env`/security-group IP allowlist checked
+  first, since the dev machine's outbound IP changes daily (see the
+  deployment-mechanics section below).
 - After every `config.yaml` deploy to EC2, must `sed` `shutdown_vm_on_exit` back
   to `true` on the server — the local file's committed default is `false` (safe
   for a dev machine) and silently overwrites the production value otherwise. (See

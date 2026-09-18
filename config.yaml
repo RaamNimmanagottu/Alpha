@@ -81,13 +81,17 @@ shutdown_vm_on_exit: false
 
 risk:
   daily_loss_limit: 5000       # rupees; bot stops opening new trades once breached
-  max_trades_per_day: 9        # across all instruments combined -- raised from 6 on
-                                # 2026-09-18 after live-observed NIFTY whipsaw (3
+  max_trades_per_day: 27       # across all instruments combined -- raised from 6 to 9
+                                # on 2026-09-18 after live-observed NIFTY whipsaw (3
                                 # trades) exhausted the combined cap and blocked
                                 # BANKNIFTY/FINNIFTY (both profitable that day) from
-                                # any further entries. 9 = 3 instruments x 3
-                                # max_trades_per_instrument, so no single bad
-                                # instrument can starve the other two anymore.
+                                # any further entries; raised again to 27 the same day
+                                # when 6 more stock instruments were added (RELIANCE,
+                                # HDFCBANK, ICICIBANK, TCS, INFY, SBIN) -- 27 = 9
+                                # instruments x 3 max_trades_per_instrument, so the
+                                # combined cap can never bind before an individual
+                                # instrument's own limit. daily_loss_limit (rupees)
+                                # remains the real account-wide brake, not this count.
   max_trades_per_instrument: 3
 
 # Local historical-candle cache used to compute the EMA(9)/EMA(21) crossover signal
@@ -161,6 +165,115 @@ instruments:
     take_profit_points: 150      # backtested on full 1000 days: 49.4% WR, +8623.00pts, robust across nearby TP/SL too (see RULES.md)
     take_profit_premium_pct: 10  # not separately backtested for FINNIFTY -- reusing NIFTY's value as a starting point
     stop_loss_points: 75
+    entry_start_time: "09:30"
+    entry_cutoff_time: "14:50"
+    force_exit_time: "14:50"
+    force_exit_time_expiry_day: "14:45"
+
+  # --- Stock options (OPTSTK), added 2026-09-18 for the month-long paper-trading
+  # experiment. Unlike NIFTY/BANKNIFTY/FINNIFTY (computed indices, always
+  # volume=0), each stock's own underlying equity has real volume -- see
+  # RULES.md's "RELIANCE" and new-stocks sections for the full backtest
+  # writeup. paper_trading stays true for all of these; no real capital risk
+  # while validating live behavior over a month.
+
+  - name: RELIANCE
+    exchange_index_symbol: RELIANCE
+    index_token: "2885"
+    candle_token: "2885"
+    signal_strategy: keltner_channel   # backtested: 1000d, 51.62% WR, +612.80pts (TP=25/SL=12)
+    lot_size: 500                      # confirmed live from the instrument master
+    quantity_lots: 1
+    buy_strike_offset: 0
+    sell_strike_offset: 0
+    take_profit_points: 25
+    take_profit_premium_pct: 10        # not separately backtested -- reusing NIFTY's value
+    stop_loss_points: 12
+    entry_start_time: "09:30"
+    entry_cutoff_time: "14:50"
+    force_exit_time: "14:50"
+    force_exit_time_expiry_day: "14:45"
+
+  - name: HDFCBANK
+    exchange_index_symbol: HDFCBANK
+    index_token: "1333"
+    candle_token: "1333"
+    signal_strategy: ema_crossover_21_50   # backtested: 1000d, 53.28% WR, +212.09pts (TP=60/SL=29)
+    lot_size: 650                      # confirmed live from the instrument master
+    quantity_lots: 1
+    buy_strike_offset: 0
+    sell_strike_offset: 0
+    take_profit_points: 60
+    take_profit_premium_pct: 10
+    stop_loss_points: 29
+    entry_start_time: "09:30"
+    entry_cutoff_time: "14:50"
+    force_exit_time: "14:50"
+    force_exit_time_expiry_day: "14:45"
+
+  - name: ICICIBANK
+    exchange_index_symbol: ICICIBANK
+    index_token: "4963"
+    candle_token: "4963"
+    signal_strategy: cci_overbought_oversold   # backtested: 1000d, 52.94% WR, +437.10pts (TP=45/SL=22)
+    lot_size: 700                      # confirmed live from the instrument master
+    quantity_lots: 1
+    buy_strike_offset: 0
+    sell_strike_offset: 0
+    take_profit_points: 45
+    take_profit_premium_pct: 10
+    stop_loss_points: 22
+    entry_start_time: "09:30"
+    entry_cutoff_time: "14:50"
+    force_exit_time: "14:50"
+    force_exit_time_expiry_day: "14:45"
+
+  - name: TCS
+    exchange_index_symbol: TCS
+    index_token: "11536"
+    candle_token: "11536"
+    signal_strategy: momentum_zero_cross   # backtested: 1000d, 48.87% WR, +1244.60pts (TP=90/SL=45) -- noisier TP/SL surface than most, see RULES.md
+    lot_size: 225                      # confirmed live from the instrument master
+    quantity_lots: 1
+    buy_strike_offset: 0
+    sell_strike_offset: 0
+    take_profit_points: 90
+    take_profit_premium_pct: 10
+    stop_loss_points: 45
+    entry_start_time: "09:30"
+    entry_cutoff_time: "14:50"
+    force_exit_time: "14:50"
+    force_exit_time_expiry_day: "14:45"
+
+  - name: INFY
+    exchange_index_symbol: INFY
+    index_token: "1594"
+    candle_token: "1594"
+    signal_strategy: ema_crossover_confirmed   # backtested: 1000d, 51.57% WR, +613.60pts (TP=35/SL=17)
+    lot_size: 400                      # confirmed live from the instrument master
+    quantity_lots: 1
+    buy_strike_offset: 0
+    sell_strike_offset: 0
+    take_profit_points: 35
+    take_profit_premium_pct: 10
+    stop_loss_points: 17
+    entry_start_time: "09:30"
+    entry_cutoff_time: "14:50"
+    force_exit_time: "14:50"
+    force_exit_time_expiry_day: "14:45"
+
+  - name: SBIN
+    exchange_index_symbol: SBIN
+    index_token: "3045"
+    candle_token: "3045"
+    signal_strategy: keltner_channel   # backtested: 1000d, 49.31% WR, +411.95pts (TP=75/SL=37)
+    lot_size: 750                      # confirmed live from the instrument master
+    quantity_lots: 1
+    buy_strike_offset: 0
+    sell_strike_offset: 0
+    take_profit_points: 75
+    take_profit_premium_pct: 10
+    stop_loss_points: 37
     entry_start_time: "09:30"
     entry_cutoff_time: "14:50"
     force_exit_time: "14:50"
