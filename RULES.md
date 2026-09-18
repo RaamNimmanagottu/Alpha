@@ -453,6 +453,40 @@ IDFCFIRSTB, BANKBARODA. `max_trades_per_day` raised to 33 (= 11 x
   baseline underneath all three modes — `min_premium` and `delta` are both
   live-only deviations from what was actually backtested.
 
+### RBI MPC announcement-day performance check (2026-09-18)
+- No API exists for RBI's Monetary Policy Committee calendar — RBI publishes
+  it as a press release in advance (per Section 45ZI of the RBI Act), the
+  same way NSE publishes its holiday list. If this ever needs automating,
+  it'd have to be hardcoded/updated periodically like `holiday_list_2026`,
+  not fetched live.
+- Checked how all 4 index instruments' validated strategies performed
+  specifically on the last ~15 RBI policy-announcement dates (2024-2026,
+  within the 1000-day backtest window) vs all other days. **Mixed, and
+  partly counter-intuitive**:
+
+  | Instrument | RBI days (avg pts/trade) | Normal days | |
+  |---|---|---|---|
+  | NIFTY | +10.67 | +5.34 | better on RBI days (~2x) |
+  | BANKNIFTY | +15.65 | +7.83 | better on RBI days (~2x) |
+  | FINNIFTY | **-9.12** | +8.40 | **worse -- flips negative** |
+  | MIDCPNIFTY | +0.48 | +4.75 | worse, but still positive |
+  | Combined | +5.11 | +6.26 | modestly worse, not dramatic |
+
+  NIFTY/BANKNIFTY's EMA-crossover trend-following signal seems to actually
+  benefit from RBI days' strong directional post-announcement moves;
+  FINNIFTY's Keltner Channel breakout signal appears to get whipsawed by
+  the initial volatility instead. SL-exit rate was modestly higher on RBI
+  days (31.3% vs 26.6%), worst single trade was NOT worse (-150 vs -229.3
+  normal, likely just small-sample noise).
+- **Sample size caveat (per Lesson #1)**: only ~15 RBI dates / 20-43 trades
+  per instrument over 3 years — too small to be strong evidence, treat as
+  an early signal worth monitoring, not a reason to change code yet. The
+  Oct/Dec 2025 dates used were best-effort estimates (bi-monthly pattern),
+  not directly confirmed against an RBI press release.
+- **No action taken yet** — flagging FINNIFTY specifically for extra
+  attention around future RBI announcement days, not disabling or adjusting
+  anything.
+
 ## 6. Data Constraints (Angel One / broker limits)
 
 - 1-min candles: ~30 days max in a single wide-range request.
