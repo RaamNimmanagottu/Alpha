@@ -425,12 +425,33 @@ IDFCFIRSTB, BANKBARODA. `max_trades_per_day` raised to 33 (= 11 x
 
 ## 5. Entry Rules
 
-- **Strike selection**: `strike_selection_mode: delta` with `target_delta: 0.5`
-  (NIFTY) — picks the strike closest to a target delta using live Angel One
-  `optionGreek` data, falls back to plain ATM (with a Telegram warning) if greeks
-  data is unavailable or fails validation. Never blocks an entry on this.
-- ATM (`buy_strike_offset`/`sell_strike_offset`: 0) is the backtested baseline for
-  both NIFTY and BANKNIFTY currently.
+- **Strike selection**: as of 2026-09-18, `strike_selection_mode: min_premium`
+  (previously `delta`). Start at ATM; if its own live premium is below that
+  instrument's `min_premium_threshold`, walk into ITM strikes (closest to
+  ATM first, correct ITM direction per option type: lower strikes for CE,
+  higher for PE) until one clears the threshold, or fall back to plain ATM
+  (with a Telegram warning) if none do within 15 strikes. Never blocks an
+  entry on this. **Rationale**: an ATM option's delta is ~0.5, so its
+  premium only tracks about half of the underlying's points-based move —
+  since every TP/SL in this project is calibrated in underlying points, an
+  ATM-only strategy's real option P&L structurally under-captures the
+  backtested edge. An ITM strike has higher delta and tracks the
+  underlying's move more faithfully, and — unlike the old `delta` mode —
+  doesn't depend on Angel One's `optionGreek` API at all, which doesn't
+  support every instrument type (see the RELIANCE/stock-options section).
+  Thresholds (2026-09-18, NOT separately backtested — a live-only change,
+  same as `delta` mode was): NIFTY 120 (user-specified), BANKNIFTY 360,
+  FINNIFTY 180, MIDCPNIFTY 144 (all three others = 1.2 x that instrument's
+  own `take_profit_points`, matching NIFTY's own 120/100 ratio — a starting
+  heuristic to refine, not independently validated per instrument).
+  Implementation: `InstrumentEngine._select_min_premium_contract()` in
+  `instrument_engine.py`; unit-tested with a mock broker in
+  `test_min_premium_selection.py` (ATM-already-clears-threshold, CE walks
+  to lower strikes, PE walks to higher strikes, falls back to ATM when
+  nothing clears the threshold, threshold=0 disables the feature entirely).
+- ATM (`buy_strike_offset`/`sell_strike_offset`: 0) is still the backtested
+  baseline underneath all three modes — `min_premium` and `delta` are both
+  live-only deviations from what was actually backtested.
 
 ## 6. Data Constraints (Angel One / broker limits)
 

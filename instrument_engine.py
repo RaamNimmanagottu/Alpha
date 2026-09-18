@@ -328,14 +328,73 @@ class InstrumentEngine:
         ]
         return candidates[candidates["strike"] == atm_strike].iloc[0]
 
+    def _select_min_premium_contract(self, candidates: pd.DataFrame, strike_reference_price: float, option_type: str):
+        """"min_premium" mode: start at ATM; if its own live premium is below
+        cfg.min_premium_threshold, walk into ITM strikes (closest to ATM
+        first) until one clears the threshold, or give up and fall back to
+        ATM. An ATM option's delta is ~0.5, so its premium only tracks about
+        half of the underlying's points-based move -- an ITM strike has
+        higher delta and tracks the underlying move more faithfully, without
+        depending on the optionGreek API (unavailable for some instrument
+        types, see RULES.md).
+
+        Never blocks an entry: any failure along this path (missing LTP,
+        no contract found within the search depth) falls back to ATM, same
+        as "delta" mode's fallback philosophy.
+        """
+        atm_row = self._select_atm_contract(candidates, strike_reference_price)
+        threshold = self.cfg.min_premium_threshold
+        if threshold <= 0:
+            return atm_row
+
+        atm_ltp = self.broker.underlying_price(self.cfg.options_exchange, atm_row["symbol"], atm_row["token"])
+        if atm_ltp and atm_ltp >= threshold:
+            return atm_row
+
+        # ITM direction: for a call, ITM strikes are BELOW spot (lower strike
+        # numbers); for a put, ITM strikes are ABOVE spot (higher strike
+        # numbers). Walk outward from ATM, closest first.
+        sorted_candidates = candidates.assign(_strike_num=pd.to_numeric(candidates["strike"])).sort_values("_strike_num")
+        atm_strike_num = float(atm_row["strike"])
+        if option_type == "CE":
+            itm_candidates = sorted_candidates[sorted_candidates["_strike_num"] < atm_strike_num].iloc[::-1]
+        else:
+            itm_candidates = sorted_candidates[sorted_candidates["_strike_num"] > atm_strike_num]
+
+        MAX_SEARCH_DEPTH = 15
+        for _, row in itm_candidates.head(MAX_SEARCH_DEPTH).iterrows():
+            ltp = self.broker.underlying_price(self.cfg.options_exchange, row["symbol"], row["token"])
+            if ltp and ltp >= threshold:
+                logger.info(
+                    "%s: ATM premium %.2f below min_premium_threshold %.2f -- using ITM strike %s (premium=%.2f) instead",
+                    self.cfg.name, atm_ltp or 0.0, threshold, row["symbol"], ltp,
+                )
+                self.notifier.send(
+                    f"MIN PREMIUM: {self.cfg.name} ATM premium {atm_ltp or 0.0:.2f} was below the "
+                    f"{threshold:.2f} threshold -- using ITM strike {row['symbol']} (premium={ltp:.2f}) instead."
+                )
+                return row
+
+        logger.warning(
+            "%s: no %s contract within %d strikes cleared min_premium_threshold %.2f, falling back to ATM",
+            self.cfg.name, option_type, MAX_SEARCH_DEPTH, threshold,
+        )
+        self.notifier.send(
+            f"WARNING: {self.cfg.name} no contract cleared the {threshold:.2f} min-premium threshold "
+            f"within {MAX_SEARCH_DEPTH} ITM strikes -- entry falling back to ATM strike selection."
+        )
+        return atm_row
+
     def _select_contract(self, strike_reference_price: float, option_type: str):
         """Returns (contract_row, greeks_row_or_None).
 
-        In "atm" mode (or as a fallback from "delta" mode), greeks_row is None and no
-        Telegram/log noise beyond the normal entry message is produced. In "delta"
-        mode, every fallback path is logged AND sent to Telegram, since silently
-        trading a different strike than configured is exactly the kind of thing that
-        must be visible, not just logged.
+        In "atm" mode (or as a fallback from "delta"/"min_premium" modes),
+        greeks_row is None and no Telegram/log noise beyond the normal entry
+        message is produced. In "delta" mode, every fallback path is logged
+        AND sent to Telegram, since silently trading a different strike than
+        configured is exactly the kind of thing that must be visible, not
+        just logged. "min_premium" mode has its own visible-fallback
+        handling in _select_min_premium_contract.
         """
         nearest_df = self.broker.option_contracts_nearest_expiry(self.cfg.exchange_index_symbol)
         if nearest_df.empty:
@@ -343,6 +402,9 @@ class InstrumentEngine:
         candidates = nearest_df[nearest_df["symbol"].str.contains(option_type)]
         if candidates.empty:
             return None, None
+
+        if self.app_cfg.strike_selection_mode == "min_premium":
+            return self._select_min_premium_contract(candidates, strike_reference_price, option_type), None
 
         if self.app_cfg.strike_selection_mode != "delta":
             return self._select_atm_contract(candidates, strike_reference_price), None

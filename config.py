@@ -16,7 +16,7 @@ def _parse_time(value: str) -> time:
     return time(int(hh), int(mm))
 
 
-_VALID_STRIKE_SELECTION_MODES = ("atm", "delta")
+_VALID_STRIKE_SELECTION_MODES = ("atm", "delta", "min_premium")
 
 
 def _parse_strike_selection_mode(raw: dict) -> str:
@@ -140,6 +140,16 @@ class InstrumentConfig:
     options_exchange: str = "NFO"
     """Exchange segment the options themselves trade on -- "NFO" for stock/
     index options, "MCX" for commodity options (options on the future)."""
+    min_premium_threshold: float = 0.0
+    """Only used when AppConfig.strike_selection_mode is "min_premium". If the
+    ATM contract's own live premium is below this, walk into ITM strikes
+    (closest to ATM first) until one clears the threshold, or fall back to
+    ATM if none do within the search depth. Rationale: an ATM option's delta
+    is ~0.5, so its premium only captures about half of the underlying's
+    points-based move -- an ITM strike has higher delta and tracks the
+    underlying's point move more faithfully, without depending on the
+    optionGreek API (which doesn't support every instrument type, see
+    RULES.md). 0 effectively disables this (any premium clears it)."""
 
     @property
     def quantity(self) -> int:
@@ -283,6 +293,7 @@ class AppConfig:
                 force_exit_time_expiry_day=_parse_time(i["force_exit_time_expiry_day"]),
                 underlying_exchange=i.get("underlying_exchange", "NSE"),
                 options_exchange=i.get("options_exchange", "NFO"),
+                min_premium_threshold=float(i.get("min_premium_threshold", 0.0)),
             )
             for i in raw["instruments"]
         ]

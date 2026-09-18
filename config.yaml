@@ -17,9 +17,15 @@ paper_trading: true
 # spot. "delta" instead buys the strike whose |delta| is closest to target_delta,
 # using Angel One's live optionGreek data -- automatically falls back to "atm" for
 # that entry (with a Telegram warning) if greeks data is unavailable or invalid, so
-# entries never block on this. NOT backtested -- a live-only strategy change.
-strike_selection_mode: delta
-target_delta: 0.5   # only used when strike_selection_mode is "delta"; 0.5 ~= ATM, so this starts equivalent to current behavior
+# entries never block on this. "min_premium" (added 2026-09-18): start at ATM: if
+# its own live premium is below that instrument's min_premium_threshold, walk into
+# ITM strikes (closest first) until one clears it, else fall back to ATM -- an ATM
+# option's delta is ~0.5 so its premium only tracks about half of the underlying's
+# points-based move; an ITM strike has higher delta and tracks it more faithfully,
+# without depending on optionGreek (which doesn't support every instrument type).
+# NOT backtested -- a live-only strategy change, same as "delta" was.
+strike_selection_mode: min_premium
+target_delta: 0.5   # only used when strike_selection_mode is "delta"
 
 # "Trader-style" live position monitoring, on top of the fixed points-based exits
 # below. Every one of these is NOT backtested -- live-only additions -- and each
@@ -125,6 +131,7 @@ instruments:
     take_profit_points: 100     # points of INDEX movement -- matches the backtest exactly
     take_profit_premium_pct: 10 # ALSO exit if the option premium itself rises 10% from entry (e.g. 150 -> 165), whichever hits first
     stop_loss_points: 50        # index-based only -- the premium % above is take-profit only, not used for stop-loss
+    min_premium_threshold: 120  # only used when strike_selection_mode is "min_premium" -- user-specified value
     entry_start_time: "09:30"        # no entries before this -- matches the backtest's ENTRY_START_TIME
     entry_cutoff_time: "14:50"       # no new entries after this -- matches the backtest's FORCE_EXIT_TIME (no separate buffer)
     # No new entries at all on the contract's own expiry day, regardless of the
@@ -146,6 +153,7 @@ instruments:
     take_profit_points: 300      # backtested on full 1000 days: 45.7% WR, +9154.60pts (see RULES.md)
     take_profit_premium_pct: 10  # not separately backtested for BANKNIFTY -- reusing NIFTY's value as a starting point
     stop_loss_points: 150
+    min_premium_threshold: 360   # 1.2 x take_profit_points, same ratio as NIFTY's user-specified 120/100 -- not separately validated
     entry_start_time: "09:30"
     entry_cutoff_time: "14:50"
     force_exit_time: "14:50"
@@ -163,6 +171,7 @@ instruments:
     take_profit_points: 150      # backtested on full 1000 days: 49.4% WR, +8623.00pts, robust across nearby TP/SL too (see RULES.md)
     take_profit_premium_pct: 10  # not separately backtested for FINNIFTY -- reusing NIFTY's value as a starting point
     stop_loss_points: 75
+    min_premium_threshold: 180   # 1.2 x take_profit_points, same ratio as NIFTY's user-specified 120/100 -- not separately validated
     entry_start_time: "09:30"
     entry_cutoff_time: "14:50"
     force_exit_time: "14:50"
@@ -180,6 +189,7 @@ instruments:
     take_profit_points: 120
     take_profit_premium_pct: 10
     stop_loss_points: 58
+    min_premium_threshold: 144   # 1.2 x take_profit_points, same ratio as NIFTY's user-specified 120/100 -- not separately validated
     entry_start_time: "09:30"
     entry_cutoff_time: "14:50"
     force_exit_time: "14:50"
