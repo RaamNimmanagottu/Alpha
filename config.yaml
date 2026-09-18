@@ -81,15 +81,17 @@ shutdown_vm_on_exit: false
 
 risk:
   daily_loss_limit: 5000       # rupees; bot stops opening new trades once breached
-  max_trades_per_day: 30       # across all instruments combined -- raised 6->9->27
-                                # ->30 on 2026-09-18: first after a live-observed
-                                # NIFTY whipsaw exhausted the combined cap and
-                                # blocked profitable BANKNIFTY/FINNIFTY; then again
-                                # when 6 stock instruments were added; then again
-                                # after HDFCBANK/ICICIBANK/TCS were removed (cost-
-                                # adjusted negative edge) and 4 midcap stocks (PNB,
-                                # FEDERALBNK, IDFCFIRSTB, BANKBARODA) were added
-                                # instead. 30 = 10 instruments x
+  max_trades_per_day: 33       # across all instruments combined -- raised
+                                # 6->9->27->30->33 on 2026-09-18: first after a
+                                # live-observed NIFTY whipsaw exhausted the
+                                # combined cap and blocked profitable
+                                # BANKNIFTY/FINNIFTY; then again when 6 stock
+                                # instruments were added; then again after
+                                # HDFCBANK/ICICIBANK/TCS were removed (cost-
+                                # adjusted negative edge) and 4 midcap stocks
+                                # (PNB, FEDERALBNK, IDFCFIRSTB, BANKBARODA) were
+                                # added instead; then again when MIDCPNIFTY was
+                                # added. 33 = 11 instruments x
                                 # max_trades_per_instrument, so the combined cap can
                                 # never bind before an individual instrument's own
                                 # limit. daily_loss_limit (rupees) remains the real
@@ -167,6 +169,23 @@ instruments:
     take_profit_points: 150      # backtested on full 1000 days: 49.4% WR, +8623.00pts, robust across nearby TP/SL too (see RULES.md)
     take_profit_premium_pct: 10  # not separately backtested for FINNIFTY -- reusing NIFTY's value as a starting point
     stop_loss_points: 75
+    entry_start_time: "09:30"
+    entry_cutoff_time: "14:50"
+    force_exit_time: "14:50"
+    force_exit_time_expiry_day: "14:45"
+
+  - name: MIDCPNIFTY
+    exchange_index_symbol: MIDCPNIFTY
+    index_token: "26074"
+    candle_token: "99926074"
+    signal_strategy: donchian_channel   # backtested: 1000d, 50.9% WR, net Rs192.61/trade after F&O costs (TP=120/SL=58) -- best net/trade of any instrument tested so far
+    lot_size: 120                       # confirmed live from the instrument master
+    quantity_lots: 1
+    buy_strike_offset: 0
+    sell_strike_offset: 0
+    take_profit_points: 120
+    take_profit_premium_pct: 10
+    stop_loss_points: 58
     entry_start_time: "09:30"
     entry_cutoff_time: "14:50"
     force_exit_time: "14:50"

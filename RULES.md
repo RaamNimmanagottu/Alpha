@@ -4,10 +4,10 @@ Living document of every finalized rule/decision, so nothing has to be re-derive
 from chat history. Update this file whenever a new rule is validated and locked in.
 
 Last updated: 2026-09-18 (day-1 live trading review; max_trades_per_day
-raised 6->9->27->30; cost-of-trading analysis added as a standing rule;
+raised 6->9->27->30->33; cost-of-trading analysis added as a standing rule;
 HDFCBANK/ICICIBANK/TCS removed for negative net-of-cost edge; PNB/
-FEDERALBNK/IDFCFIRSTB/BANKBARODA added instead; 3 entry-timing ideas tested
-and rejected).
+FEDERALBNK/IDFCFIRSTB/BANKBARODA/MIDCPNIFTY added instead; 3 entry-timing
+ideas tested and rejected).
 
 ---
 
@@ -52,6 +52,32 @@ real historical data — never assume one strategy transfers to another instrume
 - **Status**: built in code as of commit `7f34715` (`keltner_channel_signal.py` +
   config.yaml entry). On GitHub `main`. **NOT deployed to EC2** — awaiting
   explicit go-ahead (see Rule #10).
+
+### MIDCPNIFTY (Nifty Midcap Select index options) — added 2026-09-18
+- A genuine 4th tradeable NSE index (real OPTIDX options, not individual
+  midcap stocks) — `index_token: 26074`, `candle_token: 99926074`, same
+  dual-token pattern as NIFTY/BANKNIFTY/FINNIFTY. Volume=0 like every other
+  index (computed, never directly traded).
+- **Signal**: Donchian Channel Breakout (20) — same winning strategy as
+  CRUDEOIL and PNB, reused `donchian_channel_signal.py` directly, no new
+  code needed. Beat EMA(5/13) (2nd), Supertrend Standalone (3rd) in the
+  27+ strategy comparison.
+- **Take-profit**: 120 index points; **Stop-loss**: 58 index points (current
+  price ~14,500.75).
+- **Backtest**: 1000 days (50,636 candles, 2023-12-26 to 2026-09-18), gross
+  52.33% win rate at the baseline (290/139.2) comparison scale -- one of the
+  best win rates of any instrument tested this session. TP/SL then tuned
+  specifically for NET-of-cost edge (not just gross points, per the standing
+  rule below) across 60/29 up to 700/336 -- **net/trade peaks at 120/58
+  (Rs192.61/trade after realistic F&O costs), the best net/trade of any
+  instrument tested so far**, beating IDFCFIRSTB's previous best
+  (Rs130.24/trade). Genuine peak, not a runaway: net/trade rises from
+  Rs111.53 (60/29) to Rs192.61 (120/58) then falls back down (Rs139.56 at
+  150/72), and goes NEGATIVE beyond ~450/216 as the assumed premium scale
+  (and thus turnover-based costs) grows faster than gross profit.
+- **Lot size**: 120, confirmed live from the instrument master.
+- Same delta=0.5 approximation caveat as every other index/stock capital
+  estimate in this doc (no historical option-premium series available).
 
 ### Note on `max_trades_per_day` with 3 instruments
 **RESOLVED 2026-09-18, changed from 6 to 9.** This risk was flagged in advance
@@ -277,9 +303,9 @@ doesn't have enough raw points-based edge to survive real costs at any
 tested TP/SL -- not added, and per Lesson #1, no other midcap should be
 assumed to work without its own backtest either.
 
-**Current live instrument roster after this session (10 total)**: NIFTY,
-BANKNIFTY, FINNIFTY, RELIANCE, INFY, SBIN, PNB, FEDERALBNK, IDFCFIRSTB,
-BANKBARODA. `max_trades_per_day` raised to 30 (= 10 x
+**Current live instrument roster after this session (11 total)**: NIFTY,
+BANKNIFTY, FINNIFTY, MIDCPNIFTY, RELIANCE, INFY, SBIN, PNB, FEDERALBNK,
+IDFCFIRSTB, BANKBARODA. `max_trades_per_day` raised to 33 (= 11 x
 `max_trades_per_instrument: 3`) to match.
 
 ### Commodities — BLOCKED from going live, real architecture gap found 2026-09-18
