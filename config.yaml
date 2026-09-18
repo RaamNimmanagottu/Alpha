@@ -81,7 +81,13 @@ shutdown_vm_on_exit: false
 
 risk:
   daily_loss_limit: 5000       # rupees; bot stops opening new trades once breached
-  max_trades_per_day: 6        # across all instruments combined
+  max_trades_per_day: 9        # across all instruments combined -- raised from 6 on
+                                # 2026-09-18 after live-observed NIFTY whipsaw (3
+                                # trades) exhausted the combined cap and blocked
+                                # BANKNIFTY/FINNIFTY (both profitable that day) from
+                                # any further entries. 9 = 3 instruments x 3
+                                # max_trades_per_instrument, so no single bad
+                                # instrument can starve the other two anymore.
   max_trades_per_instrument: 3
 
 # Local historical-candle cache used to compute the EMA(9)/EMA(21) crossover signal

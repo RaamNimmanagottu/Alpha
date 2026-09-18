@@ -50,12 +50,27 @@ real historical data — never assume one strategy transfers to another instrume
   explicit go-ahead (see Rule #10).
 
 ### Note on `max_trades_per_day` with 3 instruments
-`max_trades_per_day: 6` is a combined cap across NIFTY+BANKNIFTY+FINNIFTY. With
-3 instruments each capped individually at `max_trades_per_instrument: 3`, the
-combined cap (6) can now bind before every instrument reaches its own limit --
-e.g. NIFTY+BANKNIFTY alone hitting 6 trades leaves FINNIFTY with zero for the
-rest of that day. Flagged, not yet changed -- a deliberate risk-parameter
-decision to make consciously, not accidentally.
+**RESOLVED 2026-09-18, changed from 6 to 9.** This risk was flagged in advance
+(see below) and then actually observed live on day 1 of BANKNIFTY/FINNIFTY:
+NIFTY whipsawed through 3 trades (2 losses, 1 small loss) by 13:55, which
+combined with BANKNIFTY's 2 and FINNIFTY's 1 to hit the old combined cap of 6
+-- `entry blocked by risk manager: Max trades per day reached (6)` then
+repeated in the logs for both BANKNIFTY and FINNIFTY for the rest of the
+session, even though both were profitable that day (+2253, +1620) and had
+room left under their own `max_trades_per_instrument: 3`. Raised
+`max_trades_per_day` to 9 (= 3 instruments x 3 each) so the combined cap can
+no longer bind before every instrument reaches its own individual limit --
+matches the original intent of `max_trades_per_instrument` (a bad day for one
+instrument should not starve the other two). `daily_loss_limit: 5000` remains
+the real account-wide brake regardless of this change.
+
+Original note (kept for context): `max_trades_per_day: 6` is a combined cap
+across NIFTY+BANKNIFTY+FINNIFTY. With 3 instruments each capped individually
+at `max_trades_per_instrument: 3`, the combined cap (6) can now bind before
+every instrument reaches its own limit -- e.g. NIFTY+BANKNIFTY alone hitting 6
+trades leaves FINNIFTY with zero for the rest of that day. Flagged, not yet
+changed -- a deliberate risk-parameter decision to make consciously, not
+accidentally.
 
 ### CRUDEOIL (MCX futures) — documented only, NOT built in code
 - **Signal**: Donchian Channel Breakout (20) — close breaks above/below the prior
@@ -125,7 +140,9 @@ decision to make consciously, not accidentally.
 
 - `daily_loss_limit: 5000` — rupees, across ALL instruments combined; bot halts new
   entries for the rest of the day once breached.
-- `max_trades_per_day: 6` — combined across all instruments.
+- `max_trades_per_day: 9` — combined across all instruments (raised from 6 on
+  2026-09-18; see the note in section 1 — was observed live to block healthy
+  instruments once a different one whipsawed through its own share of the cap).
 - `max_trades_per_instrument: 3` — per instrument, per day.
 - These are NOT modeled in `legacy/backtest/trade_simulator.py` — raw backtest
   numbers assume unlimited trades/day. Confirmed empirically (2024-02-29 case:
