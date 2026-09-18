@@ -187,6 +187,47 @@ accidentally.
 - **Lot sizes confirmed live from the instrument master** (2026-09-18):
   RELIANCE 500, HDFCBANK 650, ICICIBANK 700, TCS 225, INFY 400, SBIN 750.
 
+### Commodities — BLOCKED from going live, real architecture gap found 2026-09-18
+- Attempted to add GOLD/CRUDEOIL to `config.yaml` alongside the 6 stocks
+  (same paper-trading-month plan). Found a real, serious blocker before
+  writing any config for them -- NOT just a documentation gap this time:
+  - Commodity futures **roll to a new contract every few weeks**, unlike
+    NIFTY/BANKNIFTY/FINNIFTY's permanent index token. GOLD currently has 6
+    live FUTCOM contracts, CRUDEOIL has 10, at different expiries. The
+    specific contract this project's earlier backtest data was fetched
+    from (`CRUDEOIL21SEP26FUT`, token 565899) expires **2026-09-21 -- 3
+    days after this was checked.** Hardcoding a token in config.yaml the
+    way every other instrument does would go stale almost immediately.
+  - `broker.token_lookup(name, "MCX")`, the fallback used when
+    `index_token` is omitted, silently resolves to **the wrong thing
+    entirely** for commodities -- checked live and it returned a random
+    OPTION contract's token (e.g. `GOLD30JUN27132500CE`) instead of the
+    underlying future, because `_instrument_by_key` is a plain
+    `(name, exch_seg)` dict that just keeps whichever instrument-master row
+    happened to be last for that key, with no filtering for instrument
+    type or expiry. Using this blindly would have fed a garbage "LTP" into
+    every part of the engine that assumes it's the underlying's price --
+    broken signals, broken strike selection, possibly a crash. This is NOT
+    paper-trading-safe either, since paper mode still fetches real LTP.
+  - **What's needed before commodities can go live (even in paper mode)**:
+    a broker method that finds the nearest NON-expired FUTCOM contract for
+    a given commodity name at runtime (not a fixed config token), used
+    consistently for both the underlying LTP fetch and as the reference
+    price for strike selection (commodity options are options on the
+    future, not on spot). Not yet built.
+- **What WAS done and kept** (safe, additive, doesn't change any existing
+  instrument's behavior -- verified all 9 current instruments still default
+  correctly): extended `broker.py`'s `option_contracts()` to also match
+  `OPTFUT` (MCX commodity options use this instrumenttype, vs. NSE's
+  `OPTSTK`/`OPTIDX`); added `underlying_exchange`/`options_exchange` fields
+  to `InstrumentConfig` (default `"NSE"`/`"NFO"`, would be `"MCX"`/`"MCX"`
+  for commodities) so `instrument_engine.py` no longer hardcodes `"NSE"`/
+  `"NFO"` at its three LTP/order call sites; added `donchian_channel_signal.py`
+  (CRUDEOIL's backtested winner) as a ready-but-unused module, same
+  pattern-consistent style as the other signal modules. GOLD's winner
+  (Keltner Channel Breakout) can reuse the existing `keltner_channel_signal.py`
+  once the rollover problem above is solved.
+
 ### Commodities — general findings
 - Confirms the project's core lesson yet again: a 4th and 5th different winning
   strategy (Donchian for CRUDEOIL, Keltner for GOLD) across 5 instruments now —

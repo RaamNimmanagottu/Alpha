@@ -121,7 +121,7 @@ class InstrumentEngine:
     def run_once(self) -> None:
         now = datetime.now()
 
-        ltp = self.broker.underlying_price("NSE", self.cfg.exchange_index_symbol, self.index_token)
+        ltp = self.broker.underlying_price(self.cfg.underlying_exchange, self.cfg.exchange_index_symbol, self.index_token)
         if not ltp:
             logger.warning("%s: could not fetch LTP this cycle, skipping", self.cfg.name)
             return
@@ -138,7 +138,7 @@ class InstrumentEngine:
             # Always manage an existing position regardless of expiry day -- never
             # abandon a live trade, only refuse to open new ones on expiry day.
             force_exit = self.cfg.force_exit_time_expiry_day if expiry_today else self.cfg.force_exit_time
-            option_ltp = self.broker.underlying_price("NFO", open_trade.symbol, open_trade.token)
+            option_ltp = self.broker.underlying_price(self.cfg.options_exchange, open_trade.symbol, open_trade.token)
             candles = self._get_candles()
             latest_signal = self._get_signal(self.cfg.exchange_index_symbol, candles)
             expiry_str = atm_df["expiry"].iloc[0]
@@ -283,7 +283,7 @@ class InstrumentEngine:
         the whole pipeline, not just the signal.
         """
         if self.app_cfg.paper_trading:
-            fill_price = self.broker.underlying_price("NFO", symbol, token)
+            fill_price = self.broker.underlying_price(self.cfg.options_exchange, symbol, token)
             if not fill_price:
                 logger.error("%s: [PAPER] could not fetch LTP for %s to simulate a fill",
                              self.cfg.name, symbol)
@@ -294,7 +294,9 @@ class InstrumentEngine:
             return OrderResult(order_id=order_id, status="complete", price=fill_price)
 
         try:
-            order_id = self.broker.place_market_order(symbol, token, transaction_type, quantity)
+            order_id = self.broker.place_market_order(
+                symbol, token, transaction_type, quantity, exchange=self.cfg.options_exchange
+            )
         except OrderRejected as exc:
             logger.error("%s: %s order rejected: %s", self.cfg.name, transaction_type, exc)
             return None

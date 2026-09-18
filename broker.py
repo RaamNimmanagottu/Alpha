@@ -97,7 +97,11 @@ class AngelOneBroker:
         contracts = [
             i
             for i in self.instrument_list
-            if i["name"] == ticker and i["instrumenttype"] in ("OPTSTK", "OPTIDX")
+            # OPTFUT covers MCX commodity options (options on the futures
+            # contract, e.g. GOLD/CRUDEOIL) -- OPTSTK/OPTIDX cover NSE stock
+            # and index options. Safe to check all three unconditionally:
+            # the `name` match already scopes this to one ticker.
+            if i["name"] == ticker and i["instrumenttype"] in ("OPTSTK", "OPTIDX", "OPTFUT")
         ]
         return pd.DataFrame(contracts)
 

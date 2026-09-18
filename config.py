@@ -133,6 +133,12 @@ class InstrumentConfig:
     force_exit_time_expiry_day: time
     """Used only to force-close a position that is somehow still open on expiry
     day (safety fallback -- normal same-day exits mean this shouldn't happen)."""
+    underlying_exchange: str = "NSE"
+    """Exchange segment for the underlying's own LTP quote -- "NSE" for stock/
+    index instruments, "MCX" for commodity futures (GOLD, CRUDEOIL, ...)."""
+    options_exchange: str = "NFO"
+    """Exchange segment the options themselves trade on -- "NFO" for stock/
+    index options, "MCX" for commodity options (options on the future)."""
 
     @property
     def quantity(self) -> int:
@@ -274,6 +280,8 @@ class AppConfig:
                 entry_cutoff_time=_parse_time(i["entry_cutoff_time"]),
                 force_exit_time=_parse_time(i["force_exit_time"]),
                 force_exit_time_expiry_day=_parse_time(i["force_exit_time_expiry_day"]),
+                underlying_exchange=i.get("underlying_exchange", "NSE"),
+                options_exchange=i.get("options_exchange", "NFO"),
             )
             for i in raw["instruments"]
         ]
