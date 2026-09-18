@@ -507,8 +507,24 @@ IDFCFIRSTB, BANKBARODA. `max_trades_per_day` raised to 33 (= 11 x
 
 ## 10. Deployment Rules
 
-- Local build → validate (unit tests, backtests) → commit → merge → push to
-  GitHub can proceed without asking each time.
+- **Run `validate_all.py` before every deploy, and after any change to
+  config.yaml, an instrument's settings, or a signal module** (added
+  2026-09-18). `.venv\Scripts\python.exe validate_all.py` -- exits 0/pass,
+  1/fail, safe to gate a deploy on. Checks: every .py file parses,
+  `instrument_engine.py` imports cleanly, `config.yaml` loads, every
+  instrument's `signal_strategy` is actually registered (not just a
+  correctly-spelled string), per-instrument sanity (positive lot
+  size/TP/SL, sane time ordering, valid exchange codes), **risk config
+  sanity — specifically `max_trades_per_day >= num_instruments x
+  max_trades_per_instrument`**, every active instrument's signal module
+  smoke-tested against synthetic data, and `.env` has every required
+  credential key. The risk-config check exists specifically because the
+  combined-cap-starves-an-instrument bug (section 1's "Note on
+  `max_trades_per_day`") happened twice for real on 2026-09-18 before this
+  script existed -- it's now caught automatically instead of only after
+  something breaks live.
+- Local build → validate (`validate_all.py`, unit tests, backtests) → commit
+  → merge → push to GitHub can proceed without asking each time.
 - **Deploying to the live EC2 instance (`i-0f3149bf3fc2e4779`) always requires
   explicit user approval first** — even after full local validation passes.
   (See memory: feedback-ask-before-ec2-deploy)
