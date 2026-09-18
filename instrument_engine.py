@@ -9,16 +9,20 @@ import pandas as pd
 from broker import AngelOneBroker, OrderRejected, OrderResult
 from cci_signal import get_signal as _cci_get_signal
 from config import ROOT_DIR, AppConfig, InstrumentConfig
+from donchian_channel_signal import get_signal as _donchian_channel_get_signal
 from ema_crossover_signal import get_signal as _ema_crossover_get_signal
 from ema_crossover_21_50_signal import get_signal as _ema_crossover_21_50_get_signal
 from ema_crossover_confirmed_signal import get_signal as _ema_crossover_confirmed_get_signal
+from ema_ribbon_signal import get_signal as _ema_ribbon_get_signal
 from historical_data import update_historical_data
 from keltner_channel_signal import get_signal as _keltner_channel_get_signal
 from momentum_zero_cross_signal import get_signal as _momentum_zero_cross_get_signal
 from notifier import TelegramNotifier
+from opening_range_breakout_signal import get_signal as _opening_range_breakout_get_signal
 from risk import RiskManager
 from rsi_oversold_signal import get_signal as _rsi_oversold_get_signal
 from state import TradeStore
+from stochastic_signal import get_signal as _stochastic_get_signal
 
 logger = logging.getLogger("alpha.engine")
 
@@ -30,15 +34,23 @@ SIGNAL_STRATEGIES = {
     "cci_overbought_oversold": _cci_get_signal,
     "momentum_zero_cross": _momentum_zero_cross_get_signal,
     "ema_crossover_confirmed": _ema_crossover_confirmed_get_signal,
+    "donchian_channel": _donchian_channel_get_signal,
+    "stochastic": _stochastic_get_signal,
+    "opening_range_breakout": _opening_range_breakout_get_signal,
+    "ema_ribbon": _ema_ribbon_get_signal,
 }
 """Per-instrument signal generator dispatch (config.yaml's signal_strategy
 field, validated in config.py). Different instruments genuinely need different
 signals, each independently backtested on 1000 days of real data (see
 RULES.md): NIFTY/BANKNIFTY use EMA9/21 crossover, FINNIFTY/RELIANCE/SBIN use
-Keltner Channel Breakout, HDFCBANK uses EMA21/50, ICICIBANK uses CCI
-overbought/oversold, TCS uses Momentum zero-cross, INFY uses 2-candle
-confirmed EMA9/21. Never assume one strategy transfers to another instrument
-without backtesting it there."""
+Keltner Channel Breakout, INFY uses 2-candle confirmed EMA9/21, PNB uses
+Donchian Channel Breakout, FEDERALBNK uses Stochastic overbought/oversold,
+IDFCFIRSTB uses Opening Range Breakout, BANKBARODA uses 3-EMA Ribbon
+Alignment. (ema_crossover_21_50/cci_overbought_oversold/momentum_zero_cross
+are registered but currently unused -- HDFCBANK/ICICIBANK/TCS were removed
+2026-09-18 after a cost-adjusted analysis showed negative net edge, see
+RULES.md.) Never assume one strategy transfers to another instrument without
+backtesting it there."""
 
 
 class InstrumentEngine:

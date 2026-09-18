@@ -4,9 +4,10 @@ Living document of every finalized rule/decision, so nothing has to be re-derive
 from chat history. Update this file whenever a new rule is validated and locked in.
 
 Last updated: 2026-09-18 (day-1 live trading review; max_trades_per_day
-raised 6->9->27; 6 stock-options instruments backtested and built in code
-for a month-long paper-trading experiment; 3 entry-timing ideas tested and
-rejected).
+raised 6->9->27->30; cost-of-trading analysis added as a standing rule;
+HDFCBANK/ICICIBANK/TCS removed for negative net-of-cost edge; PNB/
+FEDERALBNK/IDFCFIRSTB/BANKBARODA added instead; 3 entry-timing ideas tested
+and rejected).
 
 ---
 
@@ -186,6 +187,100 @@ accidentally.
   separately analyzed.
 - **Lot sizes confirmed live from the instrument master** (2026-09-18):
   RELIANCE 500, HDFCBANK 650, ICICIBANK 700, TCS 225, INFY 400, SBIN 750.
+
+### NEW RULE: every instrument's backtest must be re-checked net of realistic
+### F&O trading costs before it's trusted, not just gross points/PnL
+Added 2026-09-18, after this exact gap nearly kept 3 losing instruments live.
+Gross points/PnL from `trade_simulator.simulate()` ignores brokerage, STT,
+exchange transaction charges, stamp duty, SEBI fees and GST entirely. These
+are NOT a rounding error -- on the first full check (day 1 of live
+NIFTY+BANKNIFTY+FINNIFTY+6-stocks paper trading), costs consumed **58-65% of
+gross profit** across the 9-instrument set, and completely flipped 3 stocks
+(HDFCBANK, ICICIBANK, TCS) from apparently-profitable to net-loss-making.
+
+**Cost model used** (typical Angel One / discount-broker F&O rates, current
+as of 2026-09-18 -- verify against an actual contract note before fully
+trusting the exact numbers, but the model and its qualitative conclusions
+are sound):
+- Brokerage: Rs 20 flat per executed order (Rs 40/round trip) -- confirmed
+  from Angel One's own brokerage calculator.
+- STT (Securities Transaction Tax): **0.15%** of SELL-side premium turnover
+  -- this is the rate effective 1-Apr-2026 (raised from 0.10%); using the
+  old rate understates costs meaningfully, caught and corrected this session.
+- Exchange transaction charges: ~0.05% of total (buy+sell) premium turnover.
+- SEBI turnover fees: Rs 10/crore (~0.0001%) -- confirmed from Angel One,
+  negligible in absolute terms.
+- Stamp duty: 0.003% of BUY-side turnover only.
+- GST: 18% on (brokerage + exchange charges + SEBI fees).
+- For NIFTY/BANKNIFTY/FINNIFTY and the 6 stocks, option premium turnover was
+  itself approximated (0.5-delta, same caveat as the capital-estimate
+  numbers elsewhere in this doc) since exact historical premiums aren't
+  available -- so absolute cost figures carry that same uncertainty, but the
+  **relative** pattern below (why some instruments survive costs and others
+  don't) is driven by lot-size x stock-price (turnover), which is real data,
+  not an approximation.
+
+**Why some instruments survive and others don't**: percentage-based costs
+(STT, exchange charges) scale with premium turnover = premium price x lot
+size. High-priced stocks with large lot sizes (ICICIBANK ~Rs1339 x 700,
+TCS ~Rs2113 x 225, HDFCBANK ~Rs720 x 650) generate huge turnover per trade
+relative to their points-based edge, so costs eat almost all of it. Indices
+and lower-priced/smaller-lot names keep a much larger fraction of their
+gross edge.
+
+**Full 1000-day net-of-cost results (original 9-instrument set, before the
+swap below)**:
+
+| Instrument | Trades | Gross PnL | Total Cost | Net PnL | Net/trade |
+|---|---|---|---|---|---|
+| FINNIFTY | 1075 | Rs2,58,690 | Rs77,523 | Rs1,81,167 | Rs168.53 |
+| NIFTY | 1158 | Rs2,06,404 | Rs75,505 | Rs1,30,899 | Rs113.04 |
+| RELIANCE | 866 | Rs1,53,200 | Rs70,557 | Rs82,643 | Rs95.43 |
+| INFY | 826 | Rs1,22,720 | Rs70,610 | Rs52,110 | Rs63.09 |
+| BANKNIFTY | 1136 | Rs1,37,319 | Rs81,638 | Rs55,681 | Rs49.02 |
+| SBIN | 724 | Rs1,54,481 | Rs1,44,957 | Rs9,525 | Rs13.16 |
+| ICICIBANK | 1192 | Rs1,52,985 | Rs1,58,426 | **-Rs5,441** | **-Rs4.56** |
+| TCS | 1457 | Rs1,40,018 | Rs1,49,089 | **-Rs9,072** | **-Rs6.23** |
+| HDFCBANK | 488 | Rs68,929 | Rs74,799 | **-Rs5,870** | **-Rs12.03** |
+
+**Action taken**: removed HDFCBANK, ICICIBANK, TCS from `config.yaml` and
+the live paper-trading roster entirely -- genuinely net-loss-making, not
+just thin-margin. Their signal modules (`ema_crossover_21_50_signal.py`,
+`cci_signal.py`, `momentum_zero_cross_signal.py`) stay registered in
+`instrument_engine.py`'s `SIGNAL_STRATEGIES` but are unused by any
+instrument now.
+
+### Midcap stocks — 4 added, 1 rejected, same day (2026-09-18)
+Hypothesis after the cost finding above: **lower-priced stocks should keep
+more of their edge**, since turnover-based costs scale with price x lot
+size while the points-based edge doesn't necessarily scale the same way.
+Tested 5 liquid midcap-ish F&O names (PNB, FEDERALBNK, IDFCFIRSTB,
+BANKBARODA, TATAPOWER) with the full 27+ strategy comparison, then
+TP/SL-tuned each winner AND checked net-of-cost edge (same cost model
+above) before adding anything to config.yaml -- confirmed for 4/5:
+
+| Stock | Signal | TP/SL | Lot | Trades | Win% | Net/trade (after costs) |
+|---|---|---|---|---|---|---|
+| IDFCFIRSTB | Opening Range Breakout (15min) | 1.72/0.82 | 9275 | 884 | 50.2% | **Rs130.24** (best of any instrument tested) |
+| FEDERALBNK | Stochastic(14,3) Overbought/Oversold | 10/4.8 | 2500 | 1049 | 51.1% | Rs93.34 |
+| PNB | Donchian Channel Breakout (20) | 2.35/1.13 | 8000 | 1476 | 46.0% | Rs86.95 |
+| BANKBARODA | 3-EMA Ribbon Alignment (9/21/50) | 10/4.8 | 2925 | 767 | 49.5% | Rs54.63 |
+| TATAPOWER | Stochastic(14,3) Overbought/Oversold | (all tested) | 1450 | -- | -- | **NEGATIVE at every TP/SL tried** (-Rs18.71 to -Rs116.90) -- NOT added |
+
+All 4 winners beat every one of the 3 removed large-caps on net/trade,
+several by a wide margin -- the hypothesis held. Built in code
+(`stochastic_signal.py`, `opening_range_breakout_signal.py`,
+`ema_ribbon_signal.py`; `donchian_channel_signal.py` was already written
+for CRUDEOIL, reused here for PNB) and added to `config.yaml` with
+`paper_trading: true`, same as the rest. TATAPOWER's own strategy just
+doesn't have enough raw points-based edge to survive real costs at any
+tested TP/SL -- not added, and per Lesson #1, no other midcap should be
+assumed to work without its own backtest either.
+
+**Current live instrument roster after this session (10 total)**: NIFTY,
+BANKNIFTY, FINNIFTY, RELIANCE, INFY, SBIN, PNB, FEDERALBNK, IDFCFIRSTB,
+BANKBARODA. `max_trades_per_day` raised to 30 (= 10 x
+`max_trades_per_instrument: 3`) to match.
 
 ### Commodities — BLOCKED from going live, real architecture gap found 2026-09-18
 - Attempted to add GOLD/CRUDEOIL to `config.yaml` alongside the 6 stocks
