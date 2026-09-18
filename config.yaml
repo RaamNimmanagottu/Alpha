@@ -81,21 +81,15 @@ shutdown_vm_on_exit: false
 
 risk:
   daily_loss_limit: 5000       # rupees; bot stops opening new trades once breached
-  max_trades_per_day: 33       # across all instruments combined -- raised
-                                # 6->9->27->30->33 on 2026-09-18: first after a
-                                # live-observed NIFTY whipsaw exhausted the
-                                # combined cap and blocked profitable
-                                # BANKNIFTY/FINNIFTY; then again when 6 stock
-                                # instruments were added; then again after
-                                # HDFCBANK/ICICIBANK/TCS were removed (cost-
-                                # adjusted negative edge) and 4 midcap stocks
-                                # (PNB, FEDERALBNK, IDFCFIRSTB, BANKBARODA) were
-                                # added instead; then again when MIDCPNIFTY was
-                                # added. 33 = 11 instruments x
-                                # max_trades_per_instrument, so the combined cap can
-                                # never bind before an individual instrument's own
-                                # limit. daily_loss_limit (rupees) remains the real
-                                # account-wide brake, not this count.
+  max_trades_per_day: 12       # across all instruments combined -- was raised
+                                # as high as 33 for the full 11-instrument set
+                                # (see git history / RULES.md), scaled back down
+                                # to 12 = 4 instruments x max_trades_per_instrument
+                                # for phase-4 (NIFTY/BANKNIFTY/FINNIFTY/
+                                # MIDCPNIFTY only), so the combined cap still
+                                # never binds before an individual instrument's
+                                # own limit. daily_loss_limit (rupees) remains
+                                # the real account-wide brake, not this count.
   max_trades_per_instrument: 3
 
 # Local historical-candle cache used to compute the EMA(9)/EMA(21) crossover signal
@@ -191,138 +185,12 @@ instruments:
     force_exit_time: "14:50"
     force_exit_time_expiry_day: "14:45"
 
-  # --- Stock options (OPTSTK), added 2026-09-18 for the month-long paper-trading
-  # experiment. Unlike NIFTY/BANKNIFTY/FINNIFTY (computed indices, always
-  # volume=0), each stock's own underlying equity has real volume -- see
-  # RULES.md's "RELIANCE" and new-stocks sections for the full backtest
-  # writeup. paper_trading stays true for all of these; no real capital risk
-  # while validating live behavior over a month.
-
-  - name: RELIANCE
-    exchange_index_symbol: RELIANCE
-    index_token: "2885"
-    candle_token: "2885"
-    signal_strategy: keltner_channel   # backtested: 1000d, 51.62% WR, +612.80pts (TP=25/SL=12)
-    lot_size: 500                      # confirmed live from the instrument master
-    quantity_lots: 1
-    buy_strike_offset: 0
-    sell_strike_offset: 0
-    take_profit_points: 25
-    take_profit_premium_pct: 10        # not separately backtested -- reusing NIFTY's value
-    stop_loss_points: 12
-    entry_start_time: "09:30"
-    entry_cutoff_time: "14:50"
-    force_exit_time: "14:50"
-    force_exit_time_expiry_day: "14:45"
-
-  - name: INFY
-    exchange_index_symbol: INFY
-    index_token: "1594"
-    candle_token: "1594"
-    signal_strategy: ema_crossover_confirmed   # backtested: 1000d, 51.57% WR, +613.60pts (TP=35/SL=17)
-    lot_size: 400                      # confirmed live from the instrument master
-    quantity_lots: 1
-    buy_strike_offset: 0
-    sell_strike_offset: 0
-    take_profit_points: 35
-    take_profit_premium_pct: 10
-    stop_loss_points: 17
-    entry_start_time: "09:30"
-    entry_cutoff_time: "14:50"
-    force_exit_time: "14:50"
-    force_exit_time_expiry_day: "14:45"
-
-  - name: SBIN
-    exchange_index_symbol: SBIN
-    index_token: "3045"
-    candle_token: "3045"
-    signal_strategy: keltner_channel   # backtested: 1000d, 49.31% WR, +411.95pts (TP=75/SL=37)
-    lot_size: 750                      # confirmed live from the instrument master
-    quantity_lots: 1
-    buy_strike_offset: 0
-    sell_strike_offset: 0
-    take_profit_points: 75
-    take_profit_premium_pct: 10
-    stop_loss_points: 37
-    entry_start_time: "09:30"
-    entry_cutoff_time: "14:50"
-    force_exit_time: "14:50"
-    force_exit_time_expiry_day: "14:45"
-
-  # --- Midcap stocks, added 2026-09-18 after HDFCBANK/ICICIBANK/TCS were
-  # removed for negative cost-adjusted net edge (see RULES.md). Hypothesis:
-  # lower-priced stocks have smaller premium/turnover per trade, so
-  # percentage-based costs (STT, exchange charges) consume less of the
-  # points-based edge -- confirmed for 4/5 midcaps tested; TATAPOWER was
-  # NOT added (negative net edge at every TP/SL tested).
-
-  - name: PNB
-    exchange_index_symbol: PNB
-    index_token: "10666"
-    candle_token: "10666"
-    signal_strategy: donchian_channel   # backtested: 1000d, 46.0% WR, net Rs86.95/trade after F&O costs (TP=2.35/SL=1.13)
-    lot_size: 8000                      # confirmed live from the instrument master
-    quantity_lots: 1
-    buy_strike_offset: 0
-    sell_strike_offset: 0
-    take_profit_points: 2.35
-    take_profit_premium_pct: 10
-    stop_loss_points: 1.13
-    entry_start_time: "09:30"
-    entry_cutoff_time: "14:50"
-    force_exit_time: "14:50"
-    force_exit_time_expiry_day: "14:45"
-
-  - name: FEDERALBNK
-    exchange_index_symbol: FEDERALBNK
-    index_token: "1023"
-    candle_token: "1023"
-    signal_strategy: stochastic   # backtested: 1000d, 51.1% WR, net Rs93.34/trade after F&O costs (TP=10/SL=4.8)
-    lot_size: 2500                      # confirmed live from the instrument master
-    quantity_lots: 1
-    buy_strike_offset: 0
-    sell_strike_offset: 0
-    take_profit_points: 10
-    take_profit_premium_pct: 10
-    stop_loss_points: 4.8
-    entry_start_time: "09:30"
-    entry_cutoff_time: "14:50"
-    force_exit_time: "14:50"
-    force_exit_time_expiry_day: "14:45"
-
-  - name: IDFCFIRSTB
-    exchange_index_symbol: IDFCFIRSTB
-    index_token: "11184"
-    candle_token: "11184"
-    signal_strategy: opening_range_breakout   # backtested: 1000d, 50.2% WR, net Rs130.24/trade after F&O costs -- best net/trade of any instrument (TP=1.72/SL=0.82)
-    lot_size: 9275                      # confirmed live from the instrument master
-    quantity_lots: 1
-    buy_strike_offset: 0
-    sell_strike_offset: 0
-    take_profit_points: 1.72
-    take_profit_premium_pct: 10
-    stop_loss_points: 0.82
-    entry_start_time: "09:30"
-    entry_cutoff_time: "14:50"
-    force_exit_time: "14:50"
-    force_exit_time_expiry_day: "14:45"
-
-  - name: BANKBARODA
-    exchange_index_symbol: BANKBARODA
-    index_token: "4668"
-    candle_token: "4668"
-    signal_strategy: ema_ribbon   # backtested: 1000d, 49.5% WR, net Rs54.63/trade after F&O costs (TP=10/SL=4.8)
-    lot_size: 2925                      # confirmed live from the instrument master
-    quantity_lots: 1
-    buy_strike_offset: 0
-    sell_strike_offset: 0
-    take_profit_points: 10
-    take_profit_premium_pct: 10
-    stop_loss_points: 4.8
-    entry_start_time: "09:30"
-    entry_cutoff_time: "14:50"
-    force_exit_time: "14:50"
-    force_exit_time_expiry_day: "14:45"
+  # --- Stock options and additional midcap instruments (RELIANCE, INFY,
+  # SBIN, PNB, FEDERALBNK, IDFCFIRSTB, BANKBARODA) were backtested and built
+  # in code on 2026-09-18 (see RULES.md for full writeup and git history for
+  # the exact config) but are DELIBERATELY EXCLUDED from phase-4 -- this
+  # phase deploys only the 4 index instruments (NIFTY/BANKNIFTY/FINNIFTY/
+  # MIDCPNIFTY). Re-add them from git history when ready to expand again.
 
 market:
   open_time: "09:22"
