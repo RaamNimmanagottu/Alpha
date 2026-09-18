@@ -79,6 +79,41 @@ real historical data — never assume one strategy transfers to another instrume
 - Same delta=0.5 approximation caveat as every other index/stock capital
   estimate in this doc (no historical option-premium series available).
 
+### SENSEX (BSE index options) — documented only, NOT built in code (2026-09-18)
+- A genuine BSE index, real options — but trades on a DIFFERENT exchange
+  segment than every other instrument so far: options are on **BFO** (BSE
+  F&O), not NFO. Index quote AND candle data both use the SAME token
+  (`99919000`, `exch_seg: BSE`) -- simpler than NIFTY's dual-token pattern,
+  no separate index_token/candle_token needed. Volume=0 (computed index,
+  same as every NSE index).
+- **Signal**: EMA Crossover (13/34) — a slower EMA pair than any other
+  instrument so far. Beat Keltner Channel Breakout (2nd) and Donchian (3rd)
+  in the 27+ strategy comparison, with an unusually strong 53-54% gross win
+  rate at the baseline comparison scale.
+- **Take-profit**: 1200 index points; **Stop-loss**: 576 index points
+  (current price ~74,295 -- SENSEX trades at ~3x NIFTY's level).
+- **Backtest**: 1000 days (50,642 candles, 2023-12-26 to 2026-09-18). TP/SL
+  tuned for NET-of-cost edge (same F&O cost model as every instrument this
+  session) across 600/288 up to 2800/1344 -- **genuine peak at 1200/576:
+  659 trades, 53.0% win rate, Rs159.07/trade net of realistic costs** --
+  third-best net/trade of any instrument tested this session (after
+  MIDCPNIFTY's Rs192.61 and IDFCFIRSTB's Rs130.24... actually above
+  IDFCFIRSTB, so second-best). Rises from Rs81.96 (600/288) to the 1200/576
+  peak then falls on both sides (Rs132.55 at 1485.9/713.2, down to Rs3.02
+  at 2800/1344) -- not a runaway.
+- **Lot size**: 20, confirmed live from the instrument master.
+- **5-instrument combined capital estimate** (NIFTY+BANKNIFTY+FINNIFTY+
+  MIDCPNIFTY+SENSEX, Rs 2,00,000 start, 1000 days, net of costs,
+  risk-capped): ~Rs 10,43,423 final (+421.7%, ~82.5% approx CAGR, -15.50%
+  max drawdown). SENSEX contributed Rs1,04,826 net -- more than BANKNIFTY.
+- **Not built in code yet** (user said "not now" on 2026-09-18) -- would
+  need `underlying_exchange: BSE` / `options_exchange: BFO` on the
+  instrument config (both fields already exist and support this, added
+  earlier the same day for the commodities work) and reuses the existing
+  EMA crossover signal module with a 13/34 period pair (needs its own
+  dedicated signal module, same pattern as `ema_crossover_21_50_signal.py`).
+  Same delta=0.5 approximation caveat as every other capital estimate here.
+
 ### Note on `max_trades_per_day` with 3 instruments
 **RESOLVED 2026-09-18, changed from 6 to 9.** This risk was flagged in advance
 (see below) and then actually observed live on day 1 of BANKNIFTY/FINNIFTY:
