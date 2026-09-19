@@ -3,11 +3,10 @@
 Living document of every finalized rule/decision, so nothing has to be re-derived
 from chat history. Update this file whenever a new rule is validated and locked in.
 
-Last updated: 2026-09-18 (day-1 live trading review; max_trades_per_day
-raised 6->9->27->30->33; cost-of-trading analysis added as a standing rule;
-HDFCBANK/ICICIBANK/TCS removed for negative net-of-cost edge; PNB/
-FEDERALBNK/IDFCFIRSTB/BANKBARODA/MIDCPNIFTY added instead; 3 entry-timing
-ideas tested and rejected).
+Last updated: 2026-09-19 (phase-5 deployed: 6 indices incl. SENSEX and
+NIFTYNXT50; prior day: day-1 live review, cost-of-trading analysis as a
+standing rule, HDFCBANK/ICICIBANK/TCS removed, validate_all.py added, 3
+entry-timing ideas tested and rejected).
 
 ---
 
@@ -685,18 +684,24 @@ IDFCFIRSTB, BANKBARODA. `max_trades_per_day` raised to 33 (= 11 x
 - **Deploying to the live EC2 instance (`i-0f3149bf3fc2e4779`) always requires
   explicit user approval first** — even after full local validation passes.
   (See memory: feedback-ask-before-ec2-deploy)
-- **EC2 is now on `phase-2`** (deployed 2026-09-17): NIFTY (EMA crossover),
-  BANKNIFTY (EMA crossover, TP300/SL150), FINNIFTY (Keltner Channel Breakout,
-  TP150/SL75) all verified loading correctly on the server. GOLD/CRUDEOIL
-  (documented-only) are NOT part of this deploy.
-- **Pending, not yet deployed to EC2 as of 2026-09-18 end of day**:
-  `max_trades_per_day` raise (6->9->27), the `prefetch_candles()` before-open
-  fix, and the 6 new stock instruments (RELIANCE, HDFCBANK, ICICIBANK, TCS,
-  INFY, SBIN) + their 4 new signal modules. All committed and pushed to
-  GitHub `main`. Needs explicit go-ahead before the next EC2 deploy (see
-  Rule #10) -- will also need `.env`/security-group IP allowlist checked
-  first, since the dev machine's outbound IP changes daily (see the
-  deployment-mechanics section below).
+- **EC2 deploy history**: `phase-2` (2026-09-17, 3 indices) -> `phase-4`
+  (2026-09-18 night, 4 indices + `min_premium` strike selection, verified by
+  the boot log showing all 4 engines) -> **`phase-5` (2026-09-19, current)**:
+  NIFTY, BANKNIFTY, FINNIFTY, MIDCPNIFTY, SENSEX, NIFTYNXT50, paper trading,
+  `max_trades_per_day: 18`. Deployed as one tar.gz (29 files: every
+  top-level .py + config.yaml) -- a single scp + extract fits inside the
+  120s systemd grace window, unlike per-file scp which lost the race twice.
+  Verified on the server: `validate_all.py` 116/116, and a one-off script
+  that builds all 6 engines with the real broker, prefetches SENSEX candles
+  from BSE (5,129) and NIFTYNXT50 candles (5,145) and evaluates both signals.
+  (On a weekend the service itself can't show this -- main.py exits at the
+  weekend check before engines are built -- so verify with a one-off script.)
+- The 7 stock/midcap instruments (RELIANCE, INFY, SBIN, PNB, FEDERALBNK,
+  IDFCFIRSTB, BANKBARODA) remain built in code, backtested and documented but
+  are NOT in config.yaml / NOT deployed (deliberately excluded since phase-4).
+- Every deploy needs the dev machine's current outbound IP in the security
+  group first (it changes almost daily -- check `https://api.ipify.org`); an
+  SSH timeout with no other symptom is almost always that.
 - After every `config.yaml` deploy to EC2, must `sed` `shutdown_vm_on_exit` back
   to `true` on the server — the local file's committed default is `false` (safe
   for a dev machine) and silently overwrites the production value otherwise. (See
