@@ -22,6 +22,7 @@ from notifier import TelegramNotifier
 from opening_range_breakout_signal import get_signal as _opening_range_breakout_get_signal
 from risk import RiskManager
 from rsi_oversold_signal import get_signal as _rsi_oversold_get_signal
+import telegram_format
 from state import TradeStore
 from stochastic_signal import get_signal as _stochastic_get_signal
 
@@ -200,8 +201,11 @@ class InstrumentEngine:
             return
         self._last_acted_signal_time = signal.signal_candle_time
 
-        self.notifier.send(
-            f"SIGNAL: {self.cfg.name} {signal.direction} at ltp={ltp:.1f}"
+        self._notify_html(
+            lambda: telegram_format.signal_message(
+                self.cfg, signal.direction, ltp, signal.signal_candle_time,
+                self.store.trades_today(), self._current_capital()),
+            f"SIGNAL: {self.cfg.name} {signal.direction} at ltp={ltp:.1f}",
         )
 
         # Backtested on 1000 days of NIFTY 5-min data: chasing an already-extended
@@ -494,10 +498,28 @@ class InstrumentEngine:
             )
         logger.info("%s: [%s] entered %s %s @ %.2f x%d (underlying=%.1f)%s", self.cfg.name, mode, option_type,
                     contract["symbol"], result.price, self.cfg.quantity, underlying_ltp, greeks_note)
-        self.notifier.send(
+        self._notify_html(
+            lambda: telegram_format.entry_message(
+                self.cfg, mode, option_type, contract["symbol"], result.price, self.cfg.quantity,
+                underlying_ltp, strike, greek, self.store.trades_today(), self._current_capital()),
             f"ENTRY [{mode}]: {self.cfg.name} {option_type} {contract['symbol']} "
-            f"@ {result.price:.2f} x{self.cfg.quantity} (underlying={underlying_ltp:.1f}){greeks_note}"
+            f"@ {result.price:.2f} x{self.cfg.quantity} (underlying={underlying_ltp:.1f}){greeks_note}",
         )
+
+    def _current_capital(self) -> float:
+        return self.store.get_capital(self.app_cfg.starting_capital)
+
+    def _notify_html(self, build_html, plain_text: str) -> None:
+        """Send a formatted Telegram message, degrading to the old plain text if the
+        formatter itself throws -- a cosmetic alert must never interrupt trading
+        (this runs right after an order is placed and recorded)."""
+        try:
+            html_text = build_html()
+        except Exception:
+            logger.exception("%s: Telegram message formatting failed, sending plain text", self.cfg.name)
+            self.notifier.send(plain_text)
+            return
+        self.notifier.send_html(html_text, plain_fallback=plain_text)
 
     def _maybe_fetch_iv(self, open_trade, expiry_str: str) -> float | None:
         """Throttled IV fetch for the open position -- optionGreek is a separate
@@ -672,7 +694,10 @@ class InstrumentEngine:
         new_capital = self.store.update_capital(pnl)
         logger.info("%s: closed %s entry=%.2f exit=%.2f pnl=%.2f capital=%.2f",
                     self.cfg.name, open_trade.symbol, entry_price, result.price, pnl, new_capital)
-        self.notifier.send(
+        self._notify_html(
+            lambda: telegram_format.exit_message(
+                self.cfg, reason, open_trade.symbol, entry_price, result.price, open_trade.quantity,
+                pnl, new_capital, open_trade.opened_at, self.store.trades_today()),
             f"EXIT [{reason}]: {self.cfg.name} {open_trade.symbol} "
-            f"entry={entry_price:.2f} exit={result.price:.2f} pnl={pnl:.2f} | capital={new_capital:.2f}"
+            f"entry={entry_price:.2f} exit={result.price:.2f} pnl={pnl:.2f} | capital={new_capital:.2f}",
         )
