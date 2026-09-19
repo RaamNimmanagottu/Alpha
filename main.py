@@ -14,6 +14,7 @@ from logging_setup import setup_logging
 from market_calendar import market_phase, non_trading_reason
 from notifier import TelegramNotifier
 from risk import RiskManager
+import telegram_format
 from state import TradeStore
 
 logger = setup_logging()
@@ -58,6 +59,18 @@ def _shutdown_vm_if_configured(config: AppConfig, notifier: TelegramNotifier) ->
         )
 
 
+def _send_formatted(notifier: TelegramNotifier, build_html, plain_text: str) -> None:
+    """HTML table message, falling back to plain text if formatting throws --
+    a cosmetic alert must never stop the bot from starting or shutting down."""
+    try:
+        html_text = build_html()
+    except Exception:
+        logger.exception("Telegram message formatting failed, sending plain text")
+        notifier.send(plain_text)
+        return
+    notifier.send_html(html_text, plain_fallback=plain_text)
+
+
 def main(check_holiday: bool = True) -> int:
     signal.signal(signal.SIGINT, _handle_shutdown)
     signal.signal(signal.SIGTERM, _handle_shutdown)
@@ -67,7 +80,11 @@ def main(check_holiday: bool = True) -> int:
     config = AppConfig.load()
     store = TradeStore()
     opening_capital = store.get_capital(config.starting_capital)
-    notifier.send(f"EC2 STARTED: bot process starting up. Opening capital: Rs {opening_capital:,.2f}")
+    _send_formatted(
+        notifier,
+        lambda: telegram_format.startup_message(opening_capital, config.paper_trading, config.instruments, config.risk),
+        f"EC2 STARTED: bot process starting up. Opening capital: Rs {opening_capital:,.2f}",
+    )
 
     if check_holiday:
         current_year = date.today().year
@@ -173,9 +190,11 @@ def main(check_holiday: bool = True) -> int:
     trades_today = store.trades_today()
     todays_pnl = store.realized_pnl_today()
     closing_capital = store.get_capital(config.starting_capital)
-    notifier.send(
+    _send_formatted(
+        notifier,
+        lambda: telegram_format.summary_message(opening_capital, closing_capital, trades_today),
         f"TODAY SUMMARY: opening=Rs {opening_capital:,.2f} | trades={len(trades_today)} | "
-        f"pnl={'+' if todays_pnl >= 0 else ''}Rs {todays_pnl:,.2f} | closing=Rs {closing_capital:,.2f}"
+        f"pnl={'+' if todays_pnl >= 0 else ''}Rs {todays_pnl:,.2f} | closing=Rs {closing_capital:,.2f}",
     )
 
     logger.info("Shutdown complete.")
