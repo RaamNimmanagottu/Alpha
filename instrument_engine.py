@@ -11,6 +11,7 @@ from cci_signal import get_signal as _cci_get_signal
 from config import ROOT_DIR, AppConfig, InstrumentConfig
 from donchian_channel_signal import get_signal as _donchian_channel_get_signal
 from ema_crossover_signal import get_signal as _ema_crossover_get_signal
+from ema_crossover_13_34_signal import get_signal as _ema_crossover_13_34_get_signal
 from ema_crossover_21_50_signal import get_signal as _ema_crossover_21_50_get_signal
 from ema_crossover_confirmed_signal import get_signal as _ema_crossover_confirmed_get_signal
 from ema_ribbon_signal import get_signal as _ema_ribbon_get_signal
@@ -38,6 +39,7 @@ SIGNAL_STRATEGIES = {
     "stochastic": _stochastic_get_signal,
     "opening_range_breakout": _opening_range_breakout_get_signal,
     "ema_ribbon": _ema_ribbon_get_signal,
+    "ema_crossover_13_34": _ema_crossover_13_34_get_signal,
 }
 """Per-instrument signal generator dispatch (config.yaml's signal_strategy
 field, validated in config.py). Different instruments genuinely need different
@@ -120,6 +122,7 @@ class InstrumentEngine:
             interval=hist_cfg.interval,
             interval_minutes=hist_cfg.interval_minutes,
             lookback_days=hist_cfg.lookback_days,
+            exchange=self.cfg.underlying_exchange,
         )
 
     def prefetch_candles(self) -> None:

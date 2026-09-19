@@ -53,7 +53,7 @@ _VALID_SIGNAL_STRATEGIES = (
     "ema_crossover", "rsi_oversold", "keltner_channel",
     "ema_crossover_21_50", "cci_overbought_oversold", "momentum_zero_cross",
     "ema_crossover_confirmed", "donchian_channel", "stochastic",
-    "opening_range_breakout", "ema_ribbon",
+    "opening_range_breakout", "ema_ribbon", "ema_crossover_13_34",
 )
 
 

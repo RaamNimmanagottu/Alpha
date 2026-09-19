@@ -87,12 +87,12 @@ shutdown_vm_on_exit: false
 
 risk:
   daily_loss_limit: 5000       # rupees; bot stops opening new trades once breached
-  max_trades_per_day: 12       # across all instruments combined -- was raised
+  max_trades_per_day: 18       # across all instruments combined -- was raised
                                 # as high as 33 for the full 11-instrument set
-                                # (see git history / RULES.md), scaled back down
-                                # to 12 = 4 instruments x max_trades_per_instrument
-                                # for phase-4 (NIFTY/BANKNIFTY/FINNIFTY/
-                                # MIDCPNIFTY only), so the combined cap still
+                                # (see git history / RULES.md), scaled to
+                                # 18 = 6 instruments x max_trades_per_instrument
+                                # for phase-5 (NIFTY/BANKNIFTY/FINNIFTY/
+                                # MIDCPNIFTY/SENSEX/NIFTYNXT50), so the combined cap still
                                 # never binds before an individual instrument's
                                 # own limit. daily_loss_limit (rupees) remains
                                 # the real account-wide brake, not this count.
@@ -190,6 +190,44 @@ instruments:
     take_profit_premium_pct: 10
     stop_loss_points: 58
     min_premium_threshold: 144   # 1.2 x take_profit_points, same ratio as NIFTY's user-specified 120/100 -- not separately validated
+    entry_start_time: "09:30"
+    entry_cutoff_time: "14:50"
+    force_exit_time: "14:50"
+    force_exit_time_expiry_day: "14:45"
+
+  - name: SENSEX
+    exchange_index_symbol: SENSEX
+    index_token: "99919000"             # BSE index: one token serves both LTP and candle data
+    candle_token: "99919000"
+    underlying_exchange: BSE            # BSE index, not NSE
+    options_exchange: BFO               # SENSEX options trade on BSE F&O, not NFO
+    signal_strategy: ema_crossover_13_34   # backtested: 1000d, 53.0% WR, net Rs159.07/trade after F&O costs (TP=1200/SL=576)
+    lot_size: 20                        # confirmed live from the instrument master
+    quantity_lots: 1
+    buy_strike_offset: 0
+    sell_strike_offset: 0
+    take_profit_points: 1200
+    take_profit_premium_pct: 10
+    stop_loss_points: 576
+    min_premium_threshold: 0            # DISABLED (plain ATM, as backtested): the 1.2 x TP heuristic gave 1440, but SENSEX's real ATM premium is ~270-600, so it would force a very deep-ITM strike -- needs a value near real ATM premium, to be chosen deliberately
+    entry_start_time: "09:30"
+    entry_cutoff_time: "14:50"
+    force_exit_time: "14:50"
+    force_exit_time_expiry_day: "14:45"
+
+  - name: NIFTYNXT50
+    exchange_index_symbol: NIFTYNXT50
+    index_token: "26013"
+    candle_token: "99926013"
+    signal_strategy: donchian_channel   # backtested: 1000d, 52.1% WR, net Rs190.80/trade after F&O costs (TP=800/SL=384) -- noisy TP/SL surface (two local peaks), see RULES.md
+    lot_size: 25                        # confirmed live from the instrument master
+    quantity_lots: 1
+    buy_strike_offset: 0
+    sell_strike_offset: 0
+    take_profit_points: 800
+    take_profit_premium_pct: 10
+    stop_loss_points: 384
+    min_premium_threshold: 0            # DISABLED (plain ATM, as backtested): the 1.2 x TP heuristic gave 960, but NIFTYNXT50's real ATM premium is ~560-644, so it would force a deep-ITM strike -- needs a value near real ATM premium, to be chosen deliberately
     entry_start_time: "09:30"
     entry_cutoff_time: "14:50"
     force_exit_time: "14:50"

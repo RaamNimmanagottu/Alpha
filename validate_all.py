@@ -122,10 +122,16 @@ for inst in instruments:
           inst.entry_cutoff_time <= inst.force_exit_time,
           f"{inst.entry_cutoff_time} > {inst.force_exit_time}")
     check(f"{inst.name}: candle_token non-empty", bool(inst.candle_token), "empty candle_token")
-    check(f"{inst.name}: underlying_exchange valid", inst.underlying_exchange in ("NSE", "MCX"),
+    check(f"{inst.name}: underlying_exchange valid", inst.underlying_exchange in ("NSE", "BSE", "MCX"),
           f"underlying_exchange={inst.underlying_exchange!r}")
-    check(f"{inst.name}: options_exchange valid", inst.options_exchange in ("NFO", "MCX"),
+    check(f"{inst.name}: options_exchange valid", inst.options_exchange in ("NFO", "BFO", "MCX"),
           f"options_exchange={inst.options_exchange!r}")
+    # BSE underlying and BFO options always go together (and NSE with NFO) --
+    # a mismatch would fetch quotes/candles from one exchange and trade on another.
+    expected_options_exchange = {"NSE": "NFO", "BSE": "BFO", "MCX": "MCX"}.get(inst.underlying_exchange)
+    check(f"{inst.name}: underlying_exchange/options_exchange pair consistent",
+          inst.options_exchange == expected_options_exchange,
+          f"{inst.underlying_exchange} underlying expects {expected_options_exchange} options, got {inst.options_exchange}")
 
 # --- 6. Risk config: the exact bug caught twice on 2026-09-18 ---
 print("\n=== 6. Risk config: combined cap can't starve an individual instrument ===")

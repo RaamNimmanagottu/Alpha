@@ -79,7 +79,7 @@ real historical data — never assume one strategy transfers to another instrume
 - Same delta=0.5 approximation caveat as every other index/stock capital
   estimate in this doc (no historical option-premium series available).
 
-### SENSEX (BSE index options) — documented only, NOT built in code (2026-09-18)
+### SENSEX (BSE index options) — BUILT IN CODE 2026-09-19 (phase-5)
 - A genuine BSE index, real options — but trades on a DIFFERENT exchange
   segment than every other instrument so far: options are on **BFO** (BSE
   F&O), not NFO. Index quote AND candle data both use the SAME token
@@ -106,13 +106,80 @@ real historical data — never assume one strategy transfers to another instrume
   MIDCPNIFTY+SENSEX, Rs 2,00,000 start, 1000 days, net of costs,
   risk-capped): ~Rs 10,43,423 final (+421.7%, ~82.5% approx CAGR, -15.50%
   max drawdown). SENSEX contributed Rs1,04,826 net -- more than BANKNIFTY.
-- **Not built in code yet** (user said "not now" on 2026-09-18) -- would
-  need `underlying_exchange: BSE` / `options_exchange: BFO` on the
-  instrument config (both fields already exist and support this, added
-  earlier the same day for the commodities work) and reuses the existing
-  EMA crossover signal module with a 13/34 period pair (needs its own
-  dedicated signal module, same pattern as `ema_crossover_21_50_signal.py`).
-  Same delta=0.5 approximation caveat as every other capital estimate here.
+- **Built 2026-09-19** (user asked to add SENSEX + NIFTYNXT50 and deploy):
+  `ema_crossover_13_34_signal.py` (dedicated module, same pattern as
+  `ema_crossover_21_50_signal.py`), config entry with
+  `underlying_exchange: BSE` / `options_exchange: BFO`. Live read-only check
+  before deploy: underlying LTP, BFO option quotes and BSE candle data all
+  resolve correctly (unlike the stock options, whose option quotes failed
+  with "token not found").
+- **Bug found and fixed while adding it**: `InstrumentEngine._get_candles()`
+  never passed an exchange to `update_historical_data()`, which defaults to
+  `"NSE"` -- SENSEX would have silently fetched zero candles from NSE
+  forever, so its signal would never have fired (and nothing would have
+  errored). Fixed to pass `exchange=self.cfg.underlying_exchange`;
+  regression-tested in `test_exchange_plumbing.py`. `validate_all.py` now
+  also accepts BSE/BFO and checks the underlying/options exchange pair is
+  consistent (NSE->NFO, BSE->BFO, MCX->MCX).
+- **`min_premium_threshold` set to 0 (feature disabled, plain ATM as
+  backtested)**: the 1.2 x take_profit_points heuristic used for the other
+  indices gave 1440 here, but SENSEX's real ATM premium was only ~Rs270-600
+  when checked, so the min-premium walk would have forced a very deep-ITM
+  strike -- a large unbacktested deviation. A live check across all
+  instruments (2026-09-19) showed the heuristic is only sensible where it
+  lands near real ATM premium: NIFTY 120 vs ATM ~86-92 (walks ITM slightly,
+  as intended), MIDCPNIFTY 144 vs ~119-148 (slight), BANKNIFTY 360 vs
+  ~415-536 and FINNIFTY 180 vs ~187-258 (below ATM, so effectively inert).
+  Needs a deliberate value near SENSEX's real ATM premium if the ITM
+  behaviour is wanted there.
+- Same delta=0.5 approximation caveat as every other capital estimate here.
+
+### NIFTYNXT50 (Nifty Next 50 index options) — BUILT IN CODE 2026-09-19 (phase-5)
+- A genuine NSE index with real OPTIDX options: `index_token: 26013`,
+  `candle_token: 99926013` (same dual-token pattern as NIFTY), lot size 25,
+  volume=0 (computed index).
+- **Signal**: Donchian Channel Breakout (20) -- reuses
+  `donchian_channel_signal.py` (same as MIDCPNIFTY/PNB/CRUDEOIL), no new code.
+  Won the 27+ strategy comparison at +35,789 gross points, 52.66% win rate
+  (MACD+RSI Combo was 2nd with the highest win rate, 54.93%).
+- **TP/SL**: 800/384. Tuned for net-of-cost edge across 200/96 up to 2800/1344
+  -- **the surface is bimodal (two local peaks), like TCS's was**: net/trade
+  is Rs169.13 at 400/192 and Rs190.80 at 800/384, with dips between and after
+  (Rs149-154 around 450-600, Rs154.51 at 1000/480). Chose 800/384 (1890
+  trades, 52.1% win rate, Rs190.80/trade) -- second-best net/trade of any
+  instrument tested this session after MIDCPNIFTY's Rs192.61 -- but a bimodal
+  surface is lower-confidence than a clean single peak; watch it in the
+  paper-trading month.
+- **Single-instrument capital estimate** (Rs 2,00,000, 1000 days, net of
+  costs, risk-capped at 3 trades/day): ~Rs 5,29,473 (+164.7%, ~42.9% CAGR,
+  -22.88% max drawdown).
+- `min_premium_threshold: 0` (disabled) for the same reason as SENSEX: the
+  heuristic gave 960 vs a real ATM premium of ~Rs560-644.
+
+### Combined 6-index estimate and phase-5 roster (2026-09-19)
+- NIFTY + BANKNIFTY + FINNIFTY + MIDCPNIFTY + SENSEX + NIFTYNXT50, Rs
+  2,00,000 start, 1000 days, net of realistic F&O costs, per-instrument
+  3-trades/day cap: **~Rs 13,72,897 final (+586.4%, ~101.7% approx CAGR,
+  -21.31% max drawdown)**. Per-instrument net: MIDCPNIFTY 3,81,375 /
+  NIFTYNXT50 3,60,604 / FINNIFTY 1,81,167 / NIFTY 1,30,899 / SENSEX
+  1,04,826 / BANKNIFTY 55,681. Same delta=0.5 (no theta) approximation
+  caveat as every capital estimate in this doc -- the live paper-trading
+  month is what gives the real answer.
+- `max_trades_per_day: 18` (= 6 x `max_trades_per_instrument: 3`).
+- Other index-option pairs found in the instrument master but NOT tested:
+  BANKEX (BFO, lot 30), SENSEX50 (BFO, lot 75), MCXBULLDEX (MCX, lot 15/30),
+  FOCIT (BFO, lot 45), NIFTYFPI (NFO, lot 1100).
+
+### Equity-vs-options check (2026-09-18, informational only)
+- Re-ran the 3 stocks that failed as options (HDFCBANK, ICICIBANK, TCS) as
+  plain equity intraday trades (1:1 price capture, no delta dampening;
+  equity STT 0.025% sell-side vs options' 0.15%). Mixed: HDFCBANK flips to
+  +Rs38.13/trade net (from -Rs12.03), but ICICIBANK (-Rs108.25) and TCS
+  (-Rs127.64) get much worse -- equity turnover per trade (full share price
+  x quantity) is 10-50x an option's premium, so the absolute costs balloon
+  for high-priced, high-frequency signals. And the capital needed is
+  Rs4.7-9.4 lakh per position at these quantities, far beyond Rs 2,00,000.
+  Not pursued; options remain the vehicle.
 
 ### Note on `max_trades_per_day` with 3 instruments
 **RESOLVED 2026-09-18, changed from 6 to 9.** This risk was flagged in advance
