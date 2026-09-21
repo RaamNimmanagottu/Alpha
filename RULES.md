@@ -133,8 +133,17 @@ real historical data — never assume one strategy transfers to another instrume
   behaviour is wanted there.
 - Same delta=0.5 approximation caveat as every other capital estimate here.
 
-### NIFTYNXT50 (Nifty Next 50 index options) — BUILT IN CODE 2026-09-19 (phase-5)
-- A genuine NSE index with real OPTIDX options: `index_token: 26013`,
+### NIFTYNXT50 (Nifty Next 50 index options) — BUILT IN CODE 2026-09-19 (phase-5), **REMOVED 2026-09-21 (illiquid)**
+- **REMOVED 2026-09-21** (user decision, confirmed by live paper data): the options have no real
+  two-sided market. Day-3 paper trades opened and closed at the *same* price with Rs0 P&L
+  (CE 3488.05 -> 3488.05 twice, PE 2902.55 -> 2902.55), i.e. quotes did not move / no real fills.
+  The backtest edge below used INDEX points with a 0.5-delta approximation, so it was never tradable
+  in these options. Its Rs3,60,604 share of the 6-index estimate below is therefore NOT achievable
+  -- treat the combined 6-index numbers as overstated. Config block removed, `max_trades_per_day`
+  18 -> 15 (5 x 3). `donchian_channel_signal.py` stays (MIDCPNIFTY uses it) and the NXT50 short name
+  stays in `telegram_format.py` so past NXT50 rows still render. Lesson: check option liquidity
+  (two-sided quotes, spread, volume/OI) BEFORE trusting an index-points backtest for an instrument.
+- (Original build notes follow.) A genuine NSE index with real OPTIDX options: `index_token: 26013`,
   `candle_token: 99926013` (same dual-token pattern as NIFTY), lot size 25,
   volume=0 (computed index).
 - **Signal**: Donchian Channel Breakout (20) -- reuses
@@ -155,7 +164,7 @@ real historical data — never assume one strategy transfers to another instrume
 - `min_premium_threshold: 0` (disabled) for the same reason as SENSEX: the
   heuristic gave 960 vs a real ATM premium of ~Rs560-644.
 
-### Combined 6-index estimate and phase-5 roster (2026-09-19)
+### Combined 6-index estimate and phase-5 roster (2026-09-19) -- NIFTYNXT50 removed 2026-09-21, live roster is now 5 indices
 - NIFTY + BANKNIFTY + FINNIFTY + MIDCPNIFTY + SENSEX + NIFTYNXT50, Rs
   2,00,000 start, 1000 days, net of realistic F&O costs, per-instrument
   3-trades/day cap: **~Rs 13,72,897 final (+586.4%, ~101.7% approx CAGR,

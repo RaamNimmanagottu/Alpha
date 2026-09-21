@@ -87,15 +87,15 @@ shutdown_vm_on_exit: false
 
 risk:
   daily_loss_limit: 5000       # rupees; bot stops opening new trades once breached
-  max_trades_per_day: 18       # across all instruments combined -- was raised
+  max_trades_per_day: 15       # across all instruments combined -- was raised
                                 # as high as 33 for the full 11-instrument set
                                 # (see git history / RULES.md), scaled to
-                                # 18 = 6 instruments x max_trades_per_instrument
-                                # for phase-5 (NIFTY/BANKNIFTY/FINNIFTY/
-                                # MIDCPNIFTY/SENSEX/NIFTYNXT50), so the combined cap still
-                                # never binds before an individual instrument's
-                                # own limit. daily_loss_limit (rupees) remains
-                                # the real account-wide brake, not this count.
+                                # 15 = 5 instruments x max_trades_per_instrument
+                                # (NIFTY/BANKNIFTY/FINNIFTY/MIDCPNIFTY/SENSEX;
+                                # NIFTYNXT50 removed 2026-09-21 as illiquid), so the
+                                # combined cap still never binds before an individual
+                                # instrument's own limit. daily_loss_limit (rupees)
+                                # remains the real account-wide brake, not this count.
   max_trades_per_instrument: 3
 
 # Local historical-candle cache used to compute the EMA(9)/EMA(21) crossover signal
@@ -215,23 +215,10 @@ instruments:
     force_exit_time: "14:50"
     force_exit_time_expiry_day: "14:45"
 
-  - name: NIFTYNXT50
-    exchange_index_symbol: NIFTYNXT50
-    index_token: "26013"
-    candle_token: "99926013"
-    signal_strategy: donchian_channel   # backtested: 1000d, 52.1% WR, net Rs190.80/trade after F&O costs (TP=800/SL=384) -- noisy TP/SL surface (two local peaks), see RULES.md
-    lot_size: 25                        # confirmed live from the instrument master
-    quantity_lots: 1
-    buy_strike_offset: 0
-    sell_strike_offset: 0
-    take_profit_points: 800
-    take_profit_premium_pct: 10
-    stop_loss_points: 384
-    min_premium_threshold: 0            # DISABLED (plain ATM, as backtested): the 1.2 x TP heuristic gave 960, but NIFTYNXT50's real ATM premium is ~560-644, so it would force a deep-ITM strike -- needs a value near real ATM premium, to be chosen deliberately
-    entry_start_time: "09:30"
-    entry_cutoff_time: "14:50"
-    force_exit_time: "14:50"
-    force_exit_time_expiry_day: "14:45"
+  # NIFTYNXT50 (Nifty Next 50) was REMOVED on 2026-09-21: its options are illiquid. Live paper
+  # trades opened and closed at the identical price (3488.05 -> 3488.05, 2902.55 -> 2902.55,
+  # P&L Rs0), i.e. no real two-sided market, so the backtested edge (which used index points)
+  # cannot be traded. See RULES.md ("NIFTYNXT50 REMOVED"). To restore it, take the block from git history.
 
   # --- Stock options and additional midcap instruments (RELIANCE, INFY,
   # SBIN, PNB, FEDERALBNK, IDFCFIRSTB, BANKBARODA) were backtested and built
