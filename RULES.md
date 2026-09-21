@@ -532,6 +532,15 @@ IDFCFIRSTB, BANKBARODA. `max_trades_per_day` raised to 33 (= 11 x
   SL if price moves sharply in the final minutes without touching the SL trigger
   first (observed worst case: BANKNIFTY -229.35pts vs 150pt SL; NIFTY -96.85pts vs
   50pt SL). Not yet mitigated.
+- **FIXED 2026-09-21 -- a risk halt must never strand an open position.** Live paper
+  incident: the Rs5,000 daily loss limit tripped at 14:15:24 (realized -Rs6,440.75), and
+  `main.py` then skipped every engine for the rest of the day, so FINNIFTY trade #22
+  (opened 14:01) got NO stop-loss / take-profit / 14:50 forced-exit handling and was still
+  open at 15:04. Fix: a halt now blocks NEW entries only (`InstrumentEngine.run_once(
+  allow_new_entries=False)` also drops any pending pullback entry); instruments with an open
+  trade keep being managed, idle ones are skipped (`main._run_engines_once`). Covered by
+  `test_halted_manage_open.py`. Also noted the same day: `entry_iv` was NULL for every
+  paper trade, so the "IV-drop exit" can never fire -- still open, investigate.
 
 ## 5. Entry Rules
 
