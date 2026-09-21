@@ -134,7 +134,11 @@ class InstrumentEngine:
         itself to one real fetch per candle interval."""
         self._get_candles()
 
-    def run_once(self) -> None:
+    def run_once(self, allow_new_entries: bool = True) -> None:
+        """One poll cycle. Always manages an existing open position. `allow_new_entries=False`
+        (used while the risk manager is halted, e.g. daily loss limit) additionally guarantees no
+        new entry is started or pursued -- including a pending pullback entry -- while the open
+        trade still gets its stop-loss / take-profit / forced-exit handling."""
         now = datetime.now()
 
         ltp = self.broker.underlying_price(self.cfg.underlying_exchange, self.cfg.exchange_index_symbol, self.index_token)
@@ -162,6 +166,10 @@ class InstrumentEngine:
             self._manage_open_trade(
                 open_trade, ltp, option_ltp, now, force_exit, candles, latest_signal, current_iv
             )
+            return
+
+        if not allow_new_entries:
+            self._pending_entry = None      # drop any pullback entry we were waiting on
             return
 
         if expiry_today:

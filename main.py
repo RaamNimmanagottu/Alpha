@@ -36,6 +36,27 @@ whatever external scheduler starts the VM in the first place -- only the holiday
 case is the one an outside scheduler can't know about on its own."""
 
 
+def _run_engines_once(engines, store, halted: bool) -> None:
+    """One poll cycle across all instruments.
+
+    While `halted` (daily loss limit etc.) no NEW entry may start, but an open position must still
+    be managed (SL / TP / trailing / forced exit) -- so instruments with an open trade still run,
+    with entries disabled, and instruments with nothing open are skipped (nothing to do, and it
+    saves two broker calls per instrument per cycle)."""
+    for engine in engines:
+        if halted and store.get_open_trade(engine.cfg.name) is None:
+            continue
+        try:
+            engine.run_once(allow_new_entries=not halted)
+        except Exception:
+            # A single bad cycle for one instrument must never take down the whole
+            # bot -- the old version had no top-level exception handling at all, so
+            # any transient error (a missing dataframe row, a locked file, a flaky
+            # API call) crashed the process outright, sometimes with a live position
+            # left unmanaged.
+            logger.exception("%s: unhandled error during run_once(), continuing", engine.cfg.name)
+
+
 def _handle_shutdown(signum, frame):
     global _shutdown_requested
     logger.warning("Shutdown signal received (%s). Finishing current cycle then exiting.", signum)
@@ -130,6 +151,7 @@ def main(check_holiday: bool = True) -> int:
     logger.info("Trading engine started for: %s", ", ".join(e.cfg.name for e in engines))
 
     notified_waiting_for_open = False
+    halt_logged = False
     while not _shutdown_requested:
         phase = market_phase(config.market)
         if phase == "closed":
@@ -154,22 +176,17 @@ def main(check_holiday: bool = True) -> int:
             continue
 
         risk.refresh()
-        if risk.is_halted:
-            logger.error("Risk manager has halted trading: %s. Idling until market close.",
-                         risk.halt_reason)
-            time.sleep(config.poll_interval_seconds)
-            continue
+        halted = risk.is_halted
+        if halted and not halt_logged:
+            # A halt (daily loss limit) stops NEW entries only. It used to `continue` here and skip
+            # the engines entirely, which left any open position with no stop-loss / take-profit /
+            # 14:50 forced exit (2026-09-21: FINNIFTY trade #22 was stranded open after the limit
+            # tripped at 14:15).
+            logger.error("Risk manager has halted trading: %s. No new entries; open positions "
+                         "keep being managed until they exit.", risk.halt_reason)
+            halt_logged = True
 
-        for engine in engines:
-            try:
-                engine.run_once()
-            except Exception:
-                # A single bad cycle for one instrument must never take down the whole
-                # bot -- the old version had no top-level exception handling at all, so
-                # any transient error (a missing dataframe row, a locked file, a flaky
-                # API call) crashed the process outright, sometimes with a live position
-                # left unmanaged.
-                logger.exception("%s: unhandled error during run_once(), continuing", engine.cfg.name)
+        _run_engines_once(engines, store, halted)
 
         time.sleep(config.poll_interval_seconds)
 
