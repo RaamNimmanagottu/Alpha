@@ -53,6 +53,7 @@ _MIGRATION_COLUMNS = {
     "mode": "TEXT NOT NULL DEFAULT 'LIVE'",
     "entry_iv": "REAL",
     "peak_favorable_underlying": "REAL",
+    "peak_favorable_premium": "REAL",
 }
 
 
@@ -84,7 +85,14 @@ class Trade:
     detect IV crush (a meaningful IV drop from this baseline) as an exit trigger."""
     peak_favorable_underlying: Optional[float]
     """Best underlying price seen since entry, in the trade's favorable direction --
-    the trailing stop-loss trails behind this, never behind the original static SL."""
+    the points-based trailing stop-loss (trailing_stop_mode="points") trails behind
+    this, never behind the original static SL."""
+    peak_favorable_premium: Optional[float]
+    """Best option premium (LTP) seen since entry -- always the trade's favorable
+    direction, since this bot only ever buys options (CE or PE), never writes them,
+    so pnl = (exit_price - entry_price) * quantity regardless of trade_type; a
+    premium rise is always favorable. Used by the step-ladder trailing stop
+    (trailing_stop_mode="premium_pct_step")."""
 
 
 class TradeStore:
@@ -163,8 +171,8 @@ class TradeStore:
                 """INSERT INTO trades
                    (trade_date, instrument, order_id, symbol, trade_type, token, strike,
                     entry_price, entry_underlying_price, quantity, mode, status, opened_at,
-                    entry_iv, peak_favorable_underlying)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?)""",
+                    entry_iv, peak_favorable_underlying, peak_favorable_premium)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?)""",
                 (
                     date.today().isoformat(),
                     instrument,
@@ -180,6 +188,7 @@ class TradeStore:
                     now.isoformat(timespec="seconds"),
                     entry_iv,
                     entry_underlying_price,  # peak starts at entry -- nothing favorable has happened yet
+                    entry_price,  # ditto, for the premium-based peak
                 ),
             )
             return cur.lastrowid
@@ -199,6 +208,13 @@ class TradeStore:
             conn.execute(
                 "UPDATE trades SET peak_favorable_underlying=? WHERE id=?",
                 (peak_favorable_underlying, trade_id),
+            )
+
+    def update_peak_favorable_premium(self, trade_id: int, peak_favorable_premium: float) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE trades SET peak_favorable_premium=? WHERE id=?",
+                (peak_favorable_premium, trade_id),
             )
 
     def get_open_trade(self, instrument: str) -> Optional[Trade]:
