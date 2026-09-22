@@ -78,8 +78,15 @@ real historical data — never assume one strategy transfers to another instrume
 - Same delta=0.5 approximation caveat as every other index/stock capital
   estimate in this doc (no historical option-premium series available).
 
-### SENSEX (BSE index options) — BUILT IN CODE 2026-09-19 (phase-5)
-- A genuine BSE index, real options — but trades on a DIFFERENT exchange
+### SENSEX (BSE index options) — BUILT IN CODE 2026-09-19 (phase-5), **REMOVED 2026-09-22 (illiquid)**
+- **REMOVED 2026-09-22** (user decision: SENSEX/BFO options have low liquidity). Unlike
+  NIFTYNXT50's removal the day before, this wasn't confirmed here by an identical-price paper
+  trade (today's 2 SENSEX trades did have real premium movement) -- it's the user's own call on
+  BFO options liquidity, taken at face value. Config block removed, `max_trades_per_day` 15 -> 12
+  (4 x 3). `ema_crossover_13_34_signal.py` and `test_exchange_plumbing.py` (which verifies the
+  non-NSE-exchange plumbing SENSEX needed) are left in place. Live roster is now 4 indices: NIFTY,
+  BANKNIFTY, FINNIFTY, MIDCPNIFTY.
+- (Original build notes follow.) A genuine BSE index, real options — but trades on a DIFFERENT exchange
   segment than every other instrument so far: options are on **BFO** (BSE
   F&O), not NFO. Index quote AND candle data both use the SAME token
   (`99919000`, `exch_seg: BSE`) -- simpler than NIFTY's dual-token pattern,
@@ -164,7 +171,7 @@ real historical data — never assume one strategy transfers to another instrume
 - `min_premium_threshold: 0` (disabled) for the same reason as SENSEX: the
   heuristic gave 960 vs a real ATM premium of ~Rs560-644.
 
-### Combined 6-index estimate and phase-5 roster (2026-09-19) -- NIFTYNXT50 removed 2026-09-21, live roster is now 5 indices
+### Combined 6-index estimate and phase-5 roster (2026-09-19) -- NIFTYNXT50 removed 2026-09-21, SENSEX removed 2026-09-22, live roster is now 4 indices (NIFTY, BANKNIFTY, FINNIFTY, MIDCPNIFTY)
 - NIFTY + BANKNIFTY + FINNIFTY + MIDCPNIFTY + SENSEX + NIFTYNXT50, Rs
   2,00,000 start, 1000 days, net of realistic F&O costs, per-instrument
   3-trades/day cap: **~Rs 13,72,897 final (+586.4%, ~101.7% approx CAGR,

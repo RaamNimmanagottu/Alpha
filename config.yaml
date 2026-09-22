@@ -87,13 +87,14 @@ shutdown_vm_on_exit: false
 
 risk:
   daily_loss_limit: 5000       # rupees; bot stops opening new trades once breached
-  max_trades_per_day: 15       # across all instruments combined -- was raised
+  max_trades_per_day: 12       # across all instruments combined -- was raised
                                 # as high as 33 for the full 11-instrument set
                                 # (see git history / RULES.md), scaled to
-                                # 15 = 5 instruments x max_trades_per_instrument
-                                # (NIFTY/BANKNIFTY/FINNIFTY/MIDCPNIFTY/SENSEX;
-                                # NIFTYNXT50 removed 2026-09-21 as illiquid), so the
-                                # combined cap still never binds before an individual
+                                # 12 = 4 instruments x max_trades_per_instrument
+                                # (NIFTY/BANKNIFTY/FINNIFTY/MIDCPNIFTY;
+                                # NIFTYNXT50 removed 2026-09-21, SENSEX removed
+                                # 2026-09-22, both as illiquid), so the combined
+                                # cap still never binds before an individual
                                 # instrument's own limit. daily_loss_limit (rupees)
                                 # remains the real account-wide brake, not this count.
   max_trades_per_instrument: 3
@@ -195,25 +196,9 @@ instruments:
     force_exit_time: "14:50"
     force_exit_time_expiry_day: "14:45"
 
-  - name: SENSEX
-    exchange_index_symbol: SENSEX
-    index_token: "99919000"             # BSE index: one token serves both LTP and candle data
-    candle_token: "99919000"
-    underlying_exchange: BSE            # BSE index, not NSE
-    options_exchange: BFO               # SENSEX options trade on BSE F&O, not NFO
-    signal_strategy: ema_crossover_13_34   # backtested: 1000d, 53.0% WR, net Rs159.07/trade after F&O costs (TP=1200/SL=576)
-    lot_size: 20                        # confirmed live from the instrument master
-    quantity_lots: 1
-    buy_strike_offset: 0
-    sell_strike_offset: 0
-    take_profit_points: 1200
-    take_profit_premium_pct: 10
-    stop_loss_points: 576
-    min_premium_threshold: 0            # DISABLED (plain ATM, as backtested): the 1.2 x TP heuristic gave 1440, but SENSEX's real ATM premium is ~270-600, so it would force a very deep-ITM strike -- needs a value near real ATM premium, to be chosen deliberately
-    entry_start_time: "09:30"
-    entry_cutoff_time: "14:50"
-    force_exit_time: "14:50"
-    force_exit_time_expiry_day: "14:45"
+  # SENSEX was REMOVED on 2026-09-22 (user decision: BSE/BFO options low liquidity). See RULES.md
+  # ("SENSEX REMOVED"). To restore it, take the block from git history (present through commit
+  # 23eb2bd).
 
   # NIFTYNXT50 (Nifty Next 50) was REMOVED on 2026-09-21: its options are illiquid. Live paper
   # trades opened and closed at the identical price (3488.05 -> 3488.05, 2902.55 -> 2902.55,
