@@ -46,6 +46,7 @@ def _make_engine(min_premium_threshold: float, ltp_by_symbol: dict[str, float]):
         poll_interval_seconds=3, order_fill_timeout_seconds=10, order_fill_poll_seconds=1,
         paper_trading=True, strike_selection_mode="min_premium", target_delta=0.5,
         trailing_stop_enabled=False, trailing_stop_activation_points=50, trailing_stop_distance_points=30,
+        trailing_stop_mode="points", trailing_stop_step_pct=5,
         signal_reversal_exit_enabled=False, iv_exit_enabled=False, iv_exit_drop_pct=20,
         iv_check_interval_seconds=30, momentum_exit_enabled=False, momentum_window_minutes=10,
         momentum_exit_points=60, pullback_entry_enabled=False, pullback_extended_threshold_points=100,

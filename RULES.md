@@ -519,9 +519,30 @@ IDFCFIRSTB, BANKBARODA. `max_trades_per_day` raised to 33 (= 11 x
 
 ## 4. Exit Rules (live-only additions, not backtested — each independently toggleable)
 
-- **Trailing stop-loss**: once a trade moves `trailing_stop_activation_points` (50)
-  in favor, SL trails `trailing_stop_distance_points` (30) behind the best price
-  seen. Can only tighten, never loosen past the static SL.
+- **Trailing stop-loss**: `trailing_stop_mode` selects one of two mechanisms
+  (mutually exclusive, global setting):
+  - `"points"` (the original mechanism): once a trade moves
+    `trailing_stop_activation_points` (50) in favor, SL trails
+    `trailing_stop_distance_points` (30) behind the best UNDERLYING price seen.
+    Can only tighten, never loosen past the static SL.
+  - `"premium_pct_step"` (added 2026-09-22, user-requested, now the active mode):
+    a step-ladder on the OPTION PREMIUM itself instead of the underlying. Step
+    size = `trailing_stop_step_pct` (5%) of the ENTRY premium, fixed for the
+    trade's life. Every time the PEAK premium crosses another whole step, the
+    stop locks the PREVIOUS step (one behind the new peak, not the just-crossed
+    level) -- e.g. entry=500, 5%=25-point steps: peak touching 550 locks the
+    stop at 525. The lock is driven by the peak (persisted as
+    `peak_favorable_premium`, a new `trades` column, auto-migrated), not the
+    current price, so a dip within a step never unlocks it. Identical for CE
+    and PE (this bot only buys options, never writes them, so
+    pnl = (exit_price - entry_price) * quantity regardless of type -- a
+    premium rise is always favorable). Purely additive to the index-based
+    static stop-loss (`stop_loss_points`) above: that floor is untouched and
+    still fires on its own; the premium ladder can only trigger an exit
+    earlier. Exit reason logged as `trailing_stop_loss_premium`. Tested in
+    `test_trailing_stop_premium_pct.py` (10 tests, incl. the peak-vs-current
+    ratchet property and that it never removes the index-based floor). Not
+    backtested -- like every exit rule in this section, a live-only addition.
 - **Signal-reversal exit**: exits immediately if the EMA signal flips opposite
   direction while a trade is open.
 - **IV-crush exit**: exits if IV drops `iv_exit_drop_pct` (20%) from entry.

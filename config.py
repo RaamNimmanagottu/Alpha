@@ -49,6 +49,16 @@ def _parse_pct(raw: dict, key: str, default: float) -> float:
     return value
 
 
+_TRAILING_STOP_MODES = ("points", "premium_pct_step")
+
+
+def _parse_trailing_stop_mode(raw: dict) -> str:
+    mode = str(raw.get("trailing_stop_mode", "points"))
+    if mode not in _TRAILING_STOP_MODES:
+        raise ValueError(f"config.yaml: trailing_stop_mode must be one of {_TRAILING_STOP_MODES}, got {mode!r}")
+    return mode
+
+
 _VALID_SIGNAL_STRATEGIES = (
     "ema_crossover", "rsi_oversold", "keltner_channel",
     "ema_crossover_21_50", "cci_overbought_oversold", "momentum_zero_cross",
@@ -204,6 +214,22 @@ class AppConfig:
     static stop_loss_points level. Not backtested; a live-only addition."""
     trailing_stop_activation_points: float
     trailing_stop_distance_points: float
+    trailing_stop_mode: str
+    """"points" (default/original behavior above, in underlying index points) or
+    "premium_pct_step" (added 2026-09-22, user-requested): a step-ladder trailing
+    stop on the OPTION PREMIUM itself, not the underlying. Every time the premium
+    rises by another trailing_stop_step_pct of the entry premium, the stop locks in
+    the PREVIOUS step (e.g. entry=500, step=5% -> premium touching 550 locks the
+    stop at 525, the level one step behind the new peak). Works identically for CE
+    and PE, since this bot only ever buys options -- profit is always
+    (exit_price - entry_price), so a premium rise is favorable either way. This is
+    purely additive to the existing index-based static stop-loss (never removes
+    that protection, can only trigger an exit earlier/tighter). Not backtested."""
+    trailing_stop_step_pct: float
+    """Only used when trailing_stop_mode="premium_pct_step". Step size as a percent
+    of the ENTRY premium (fixed for the life of the trade, not recomputed off the
+    peak) -- e.g. entry=500, step_pct=5 -> a fixed 25-point step ladder: 525, 550,
+    575, ..."""
 
     signal_reversal_exit_enabled: bool
     """Exit immediately if the EMA9/EMA21 signal reverses direction while a trade is
@@ -320,6 +346,8 @@ class AppConfig:
             trailing_stop_enabled=bool(raw.get("trailing_stop_enabled", False)),
             trailing_stop_activation_points=_parse_positive_float(raw, "trailing_stop_activation_points", 50.0),
             trailing_stop_distance_points=_parse_positive_float(raw, "trailing_stop_distance_points", 30.0),
+            trailing_stop_mode=_parse_trailing_stop_mode(raw),
+            trailing_stop_step_pct=_parse_pct(raw, "trailing_stop_step_pct", 5.0),
             signal_reversal_exit_enabled=bool(raw.get("signal_reversal_exit_enabled", False)),
             iv_exit_enabled=bool(raw.get("iv_exit_enabled", False)),
             iv_exit_drop_pct=_parse_pct(raw, "iv_exit_drop_pct", 20.0),

@@ -35,10 +35,24 @@ target_delta: 0.5   # only used when strike_selection_mode is "delta"
 # Trailing stop-loss: once the trade has moved trailing_stop_activation_points in
 # its favor, the stop-loss trails trailing_stop_distance_points behind the best
 # underlying price seen since entry. Can only tighten the stop, never loosen it
-# below the original stop_loss_points level.
+# below the original stop_loss_points level. Used only when trailing_stop_mode
+# is "points" -- kept/still valid as a fallback/rollback option, not currently active.
 trailing_stop_enabled: true
 trailing_stop_activation_points: 50
 trailing_stop_distance_points: 30
+
+# trailing_stop_mode: "points" (the underlying-index-based mechanism just above) or
+# "premium_pct_step" (added 2026-09-22, user-requested): a step-ladder trailing
+# stop on the OPTION PREMIUM itself. Every time the premium rises by another
+# trailing_stop_step_pct of the ENTRY premium, the stop locks in the PREVIOUS step
+# -- e.g. entry=500, step_pct=5 (=25 points): premium touching 550 locks the stop
+# at 525 (one step behind the new peak, not the just-crossed level itself). Works
+# identically for CE and PE (this bot only buys options, never writes them, so a
+# premium rise is always favorable regardless of direction). Purely additive to
+# the index-based static stop-loss above -- never removes that protection, can
+# only trigger an exit earlier/tighter. Not backtested; a live-only addition.
+trailing_stop_mode: premium_pct_step
+trailing_stop_step_pct: 5
 
 # Exit immediately if the EMA9/EMA21 signal reverses direction while a trade is
 # open (e.g. a SELL signal fires while holding a CE) -- the strategy itself is

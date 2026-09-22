@@ -603,14 +603,20 @@ class InstrumentEngine:
             hit_index_take_profit = underlying_ltp <= index_take_profit_price
 
         # -- Trailing stop-loss (live-only): can only tighten the stop, never loosen
-        # it past the static level above --------------------------------------------
+        # it past the static level above. trailing_stop_mode selects ONE of two
+        # independent mechanisms: "points" trails the UNDERLYING (original
+        # behavior, unchanged below); "premium_pct_step" (added 2026-09-22,
+        # user-requested) instead trails the OPTION PREMIUM in a step-ladder --
+        # see the block further below. The premium mode is purely additive to the
+        # static index-based stop-loss computed here: it can only make the exit
+        # trigger earlier, never removes that floor. ---------------------------
         stop_loss_price = static_stop_loss_price
         peak = (
             open_trade.peak_favorable_underlying
             if open_trade.peak_favorable_underlying is not None
             else entry_underlying
         )
-        if self.app_cfg.trailing_stop_enabled:
+        if self.app_cfg.trailing_stop_enabled and self.app_cfg.trailing_stop_mode == "points":
             if open_trade.trade_type == "CE":
                 new_peak = max(peak, underlying_ltp)
                 favorable_move = new_peak - entry_underlying
@@ -627,9 +633,41 @@ class InstrumentEngine:
             peak = new_peak
 
         if open_trade.trade_type == "CE":
-            hit_stop_loss = underlying_ltp <= stop_loss_price
+            hit_index_stop_loss = underlying_ltp <= stop_loss_price
         else:
-            hit_stop_loss = underlying_ltp >= stop_loss_price
+            hit_index_stop_loss = underlying_ltp >= stop_loss_price
+
+        # -- Premium step-ladder trailing stop (live-only, trailing_stop_mode=
+        # "premium_pct_step"). Works identically for CE and PE: this bot only ever
+        # BUYS options, never writes them, so pnl = (exit_price - entry_price) *
+        # quantity regardless of trade_type -- a premium rise is always favorable.
+        # Step size is trailing_stop_step_pct of the ENTRY premium, fixed for the
+        # trade's life. Every time the peak premium crosses another whole step, the
+        # stop locks in the PREVIOUS step (e.g. entry=500, step=5%=25: peak touching
+        # 550 locks the stop at 525 -- one step behind, never the just-crossed one).
+        # Checked against the CURRENT premium (a dip back through the locked level),
+        # while the level itself only ever moves off the PEAK (never unlocks on a
+        # dip within a step). -------------------------------------------------------
+        premium_stop_loss_price = None
+        hit_premium_trailing_stop = False
+        if (
+            self.app_cfg.trailing_stop_enabled
+            and self.app_cfg.trailing_stop_mode == "premium_pct_step"
+            and entry_price > 0
+        ):
+            step = entry_price * (self.app_cfg.trailing_stop_step_pct / 100)
+            peak_premium = open_trade.peak_favorable_premium
+            if peak_premium is None:
+                peak_premium = entry_price
+            new_peak_premium = max(peak_premium, option_ltp) if option_ltp > 0 else peak_premium
+            steps_crossed = int((new_peak_premium - entry_price) // step) if step > 0 else 0
+            if steps_crossed >= 1:
+                premium_stop_loss_price = entry_price + (steps_crossed - 1) * step
+                hit_premium_trailing_stop = option_ltp > 0 and option_ltp <= premium_stop_loss_price
+            if new_peak_premium != peak_premium:
+                self.store.update_peak_favorable_premium(open_trade.id, new_peak_premium)
+
+        hit_stop_loss = hit_index_stop_loss or hit_premium_trailing_stop
 
         # -- Premium %-based take-profit ---------------------------------------------
         premium_take_profit_price = entry_price * (1 + self.cfg.take_profit_premium_pct / 100)
@@ -664,15 +702,18 @@ class InstrumentEngine:
         ):
             logger.info(
                 "%s: holding %s, underlying=%.2f entry_underlying=%.2f index_tp=%.2f sl=%.2f "
-                "option_ltp=%.2f entry_price=%.2f premium_tp=%.2f iv=%s entry_iv=%s",
+                "option_ltp=%.2f entry_price=%.2f premium_tp=%.2f premium_trail_sl=%s iv=%s entry_iv=%s",
                 self.cfg.name, open_trade.symbol, underlying_ltp, entry_underlying,
                 index_take_profit_price, stop_loss_price, option_ltp, entry_price, premium_take_profit_price,
+                f"{premium_stop_loss_price:.2f}" if premium_stop_loss_price is not None else "n/a",
                 f"{current_iv:.2f}" if current_iv is not None else "n/a",
                 f"{open_trade.entry_iv:.2f}" if open_trade.entry_iv is not None else "n/a",
             )
             return
 
-        if hit_stop_loss:
+        if hit_premium_trailing_stop:
+            reason = "trailing_stop_loss_premium"
+        elif hit_stop_loss:
             reason = "trailing_stop_loss" if stop_loss_price != static_stop_loss_price else "stop_loss"
         elif hit_signal_reversal:
             reason = "signal_reversal"
@@ -686,8 +727,9 @@ class InstrumentEngine:
             reason = "take_profit_premium"
         else:
             reason = "time_exit"
-        logger.info("%s: exiting %s due to %s (underlying=%.2f, option_ltp=%.2f, sl=%.2f, iv=%s)",
+        logger.info("%s: exiting %s due to %s (underlying=%.2f, option_ltp=%.2f, sl=%.2f, premium_trail_sl=%s, iv=%s)",
                      self.cfg.name, open_trade.symbol, reason, underlying_ltp, option_ltp, stop_loss_price,
+                     f"{premium_stop_loss_price:.2f}" if premium_stop_loss_price is not None else "n/a",
                      f"{current_iv:.2f}" if current_iv is not None else "n/a")
 
         result = self._execute_order(open_trade.symbol, open_trade.token, "SELL", open_trade.quantity)
