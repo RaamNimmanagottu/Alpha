@@ -84,6 +84,38 @@ momentum_exit_points: 60
 pullback_entry_enabled: true
 pullback_extended_threshold_points: 100
 
+# Extreme Point Rule (Wilder's DMI safeguard, applied to whichever signal strategy this
+# instrument runs): don't enter on the signal candle itself -- only enter once price breaks
+# that candle's own high (BUY) / low (SELL) within extreme_point_rule_max_wait_bars candles,
+# otherwise treat it as a false/whipsaw signal and skip. Backtested on all 4 live instruments
+# and 3 distinct base strategies (EMA crossover, Keltner Channel, Donchian Channel): NIFTY
+# 1146->871 trades, 6384->10829pts (+70%); BANKNIFTY 9334->22746pts (+144%); FINNIFTY
+# 8441->11622pts (+38%); MIDCPNIFTY 9228->13266pts (+44%) -- both-halves and walk-forward
+# validated (see research/NIFTY_INDICATOR_CORRELATION_FINDINGS.md Phase 2.2/2.3/2.6/3.0),
+# still net profitable under stress-case F&O costs (Phase 3.1). Starts DISABLED -- flip to
+# true only after paper-trading review, per the standing rule to ask before any live change.
+extreme_point_rule_enabled: false
+extreme_point_rule_max_wait_bars: 3
+
+# RSI-confirm widened take-profit: at the checkpoint (rsi_confirm_widened_tp_checkpoint_bars
+# candles after entry), if the trade is STILL OPEN and RSI has moved with the trade's own
+# direction since entry, the take-profit target widens from that instrument's normal
+# take_profit_points to InstrumentConfig.rsi_confirm_widened_tp_points for the rest of the
+# trade -- stop-loss and the premium-pct take-profit are both left completely unchanged
+# either way (this only ever captures MORE upside on a confirmed winner, never touches risk).
+# Backtested on NIFTY only (research/rsi_confirm_widened_tp_study.py, Phase 2.1/3.0/3.1):
+# 6384->12108pts (+90%) combined with the Extreme Point Rule above, both-halves and
+# walk-forward validated, net profitable under stress-case costs. IMPORTANT: this widens only
+# the INDEX-points take-profit -- take_profit_premium_pct (10% for NIFTY) is a live-only
+# mechanism that was never part of the backtest (pure index-points simulation) and is
+# deliberately left untouched, so realized gains on a confirmed trade may be smaller live than
+# backtested if the premium-pct check fires first. That is a conservative gap, not a risk.
+# This master switch alone does nothing -- it's only active for instruments that also set
+# rsi_confirm_widened_tp_points (NIFTY, below); other instruments are untouched even when this
+# is true. Starts DISABLED -- flip to true only after paper-trading review.
+rsi_confirm_widened_tp_enabled: false
+rsi_confirm_widened_tp_checkpoint_bars: 6
+
 # Seed value for the account capital ledger (data/trades.db, table "account") --
 # only used the very first time it's ever read. From then on capital compounds
 # across days (each trade's pnl adds/subtracts from it); it does NOT reset to
@@ -155,6 +187,11 @@ instruments:
     # backtested (the 1000-day backtest traded straight through expiry days).
     force_exit_time: "14:50"         # force-close any open position at/after this time -- matches the backtest
     force_exit_time_expiry_day: "14:45"     # safety fallback: force-close if a position is somehow still open on expiry day
+    # Widened take-profit target once RSI confirms (see rsi_confirm_widened_tp_enabled above)
+    # -- only takes effect once that global flag is also true. NIFTY-only: backtested on
+    # NIFTY data only, not validated for any other instrument (do not copy this to
+    # BANKNIFTY/FINNIFTY/MIDCPNIFTY without separately backtesting it there first).
+    rsi_confirm_widened_tp_points: 400
 
   - name: BANKNIFTY
     exchange_index_symbol: BANKNIFTY
