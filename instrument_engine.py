@@ -16,6 +16,7 @@ from ema_crossover_21_50_signal import get_signal as _ema_crossover_21_50_get_si
 from ema_crossover_confirmed_signal import get_signal as _ema_crossover_confirmed_get_signal
 from ema_ribbon_signal import get_signal as _ema_ribbon_get_signal
 from historical_data import update_historical_data
+import indicators as ind
 from keltner_channel_signal import get_signal as _keltner_channel_get_signal
 from momentum_zero_cross_signal import get_signal as _momentum_zero_cross_get_signal
 from notifier import TelegramNotifier
@@ -242,14 +243,14 @@ class InstrumentEngine:
             elif self.app_cfg.extreme_point_rule_enabled:
                 self._set_extreme_point_pending_entry("CE", crossover_candle["high"], ltp, signal.signal_candle_time)
             else:
-                self._enter(ltp + self.cfg.buy_strike_offset, "CE", underlying_ltp=ltp)
+                self._enter(ltp + self.cfg.buy_strike_offset, "CE", underlying_ltp=ltp, candles=candles)
         elif signal.direction == "SELL":
             if extended:
                 self._set_pullback_pending_entry("PE", crossover_candle["high"], ltp, candle_range, signal.signal_candle_time)
             elif self.app_cfg.extreme_point_rule_enabled:
                 self._set_extreme_point_pending_entry("PE", crossover_candle["low"], ltp, signal.signal_candle_time)
             else:
-                self._enter(ltp + self.cfg.sell_strike_offset, "PE", underlying_ltp=ltp)
+                self._enter(ltp + self.cfg.sell_strike_offset, "PE", underlying_ltp=ltp, candles=candles)
 
     def _set_pullback_pending_entry(
         self, direction: str, limit_price: float, signal_ltp: float, candle_range: float, signal_candle_time
@@ -306,7 +307,7 @@ class InstrumentEngine:
         self._pending_entry = None
         offset = self.cfg.buy_strike_offset if direction == "CE" else self.cfg.sell_strike_offset
         logger.info("%s: pullback filled -- %s at %.1f (target was %.1f)", self.cfg.name, direction, ltp, limit_price)
-        self._enter(ltp + offset, direction, underlying_ltp=ltp)
+        self._enter(ltp + offset, direction, underlying_ltp=ltp, candles=candles)
 
     def _set_extreme_point_pending_entry(
         self, direction: str, extreme_price: float, signal_ltp: float, signal_candle_time
@@ -387,7 +388,7 @@ class InstrumentEngine:
         offset = self.cfg.buy_strike_offset if direction == "CE" else self.cfg.sell_strike_offset
         logger.info("%s: extreme-point confirmed -- %s at %.1f (broke %.1f)",
                      self.cfg.name, direction, ltp, extreme_price)
-        self._enter(ltp + offset, direction, underlying_ltp=ltp)
+        self._enter(ltp + offset, direction, underlying_ltp=ltp, candles=candles)
 
     def _execute_order(
         self, symbol: str, token: str, transaction_type: str, quantity: int
@@ -559,7 +560,10 @@ class InstrumentEngine:
 
         return matching.iloc[0], best_greek
 
-    def _enter(self, strike_reference_price: float, option_type: str, underlying_ltp: float) -> None:
+    def _enter(
+        self, strike_reference_price: float, option_type: str, underlying_ltp: float,
+        candles: pd.DataFrame | None = None,
+    ) -> None:
         contract, greek = self._select_contract(strike_reference_price, option_type)
         if contract is None:
             logger.error("%s: no %s contract found near %.1f", self.cfg.name, option_type, strike_reference_price)
@@ -572,6 +576,7 @@ class InstrumentEngine:
 
         mode = "PAPER" if self.app_cfg.paper_trading else "LIVE"
         entry_iv = float(greek["impliedVolatility"]) if greek is not None else None
+        entry_rsi = self._current_rsi(candles)
         self.store.open_trade(
             instrument=self.cfg.name,
             order_id=result.order_id,
@@ -584,6 +589,7 @@ class InstrumentEngine:
             strike=strike,
             mode=mode,
             entry_iv=entry_iv,
+            entry_rsi=entry_rsi,
         )
         # A stale IV cached from a just-closed trade must never leak into this new
         # one's IV-crush check -- force a fresh fetch on its first management cycle.
@@ -668,6 +674,62 @@ class InstrumentEngine:
         end_price = float(window["close"].iloc[-1])
         return (end_price - start_price) if trade_type == "CE" else (start_price - end_price)
 
+    def _current_rsi(self, candles: pd.DataFrame | None) -> float | None:
+        """RSI(14) on the underlying's 5-min close, or None if candles are unavailable or
+        there isn't yet enough history to warm the indicator up (never blocks anything that
+        calls this -- both entry and the widened-TP checkpoint treat None as "can't decide
+        either way, fall back to the untouched original behavior")."""
+        if candles is None or candles.empty:
+            return None
+        value = ind.rsi(candles["close"]).iloc[-1]
+        return None if pd.isna(value) else float(value)
+
+    def _maybe_widen_take_profit(self, open_trade, candles: pd.DataFrame) -> float:
+        """RSI-confirm widened take-profit (research/rsi_confirm_widened_tp_study.py, Phase
+        2.1/3.0/3.1): returns the take-profit target (index points) to actually use for this
+        open trade -- normally just self.cfg.take_profit_points, unchanged.
+
+        Only ever deviates from that when ALL of: the feature is enabled globally
+        (rsi_confirm_widened_tp_enabled), this instrument has a real backtested widened value
+        (rsi_confirm_widened_tp_points > 0), and the trade is still open
+        rsi_confirm_widened_tp_checkpoint_bars candles after entry. At that checkpoint the
+        decision is made ONCE (memoized via tp_widen_checked/tp_widened_points on the trade
+        record) and never revisited: if RSI has moved with the trade's own direction since
+        entry, the wider target is used for the rest of the trade's life; if not (or RSI
+        couldn't be read at entry or at the checkpoint), the normal target stays in force.
+        This never touches the stop-loss or the premium-pct take-profit -- it can only ever
+        capture more upside on a trade already confirmed to be moving favorably, never make a
+        losing trade worse.
+        """
+        base_points = self.cfg.take_profit_points
+        if not self.app_cfg.rsi_confirm_widened_tp_enabled or self.cfg.rsi_confirm_widened_tp_points <= 0:
+            return base_points
+
+        if open_trade.tp_widen_checked:
+            return open_trade.tp_widened_points if open_trade.tp_widened_points is not None else base_points
+
+        if open_trade.entry_rsi is None:
+            return base_points  # nothing to compare against yet -- wait, don't decide "no" permanently
+
+        entry_time = pd.Timestamp(open_trade.opened_at)
+        bars_since_entry = int((candles["date"] > entry_time).sum())
+        if bars_since_entry < self.app_cfg.rsi_confirm_widened_tp_checkpoint_bars:
+            return base_points  # checkpoint not reached yet -- still undecided, don't memoize
+
+        current_rsi = self._current_rsi(candles)
+        direction = 1 if open_trade.trade_type == "CE" else -1
+        confirms = current_rsi is not None and direction * (current_rsi - open_trade.entry_rsi) > 0
+
+        widened = self.cfg.rsi_confirm_widened_tp_points if confirms else None
+        self.store.update_tp_widen_decision(open_trade.id, widened)
+        logger.info(
+            "%s: RSI-confirm widened-TP checkpoint (%d candles since entry) -- entry_rsi=%.1f "
+            "current_rsi=%s confirms=%s -> take_profit_points=%.1f", self.cfg.name, bars_since_entry,
+            open_trade.entry_rsi, f"{current_rsi:.1f}" if current_rsi is not None else "n/a",
+            confirms, widened if widened is not None else base_points,
+        )
+        return widened if widened is not None else base_points
+
     def _manage_open_trade(
         self,
         open_trade,
@@ -681,7 +743,7 @@ class InstrumentEngine:
     ) -> None:
         entry_underlying = open_trade.entry_underlying_price
         entry_price = open_trade.entry_price
-        take_profit_points = self.cfg.take_profit_points
+        take_profit_points = self._maybe_widen_take_profit(open_trade, candles)
         stop_loss_points = self.cfg.stop_loss_points
 
         # -- Static index-based take-profit/stop-loss: the backtested baseline -----
@@ -814,7 +876,11 @@ class InstrumentEngine:
         elif hit_momentum_exit:
             reason = "momentum"
         elif hit_index_take_profit:
-            reason = "take_profit_index"
+            reason = (
+                "take_profit_index_widened"
+                if open_trade.tp_widen_checked and open_trade.tp_widened_points is not None
+                else "take_profit_index"
+            )
         elif hit_premium_take_profit:
             reason = "take_profit_premium"
         else:

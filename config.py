@@ -160,6 +160,23 @@ class InstrumentConfig:
     underlying's point move more faithfully, without depending on the
     optionGreek API (which doesn't support every instrument type, see
     RULES.md). 0 effectively disables this (any premium clears it)."""
+    rsi_confirm_widened_tp_points: float = 0.0
+    """Only used when AppConfig.rsi_confirm_widened_tp_enabled is true. 0 (default)
+    disables the feature for this instrument even if the global flag is on -- only
+    an instrument with real backtested evidence should set this. NIFTY backtested
+    (research/rsi_confirm_widened_tp_study.py, Phase 2.1/3.0/3.1): at the checkpoint
+    (rsi_confirm_widened_tp_checkpoint_bars candles after entry), if the trade is
+    still open AND RSI has moved with the trade's direction since entry, the
+    take-profit target widens from take_profit_points to THIS value for the rest of
+    the trade's life -- stop-loss and the premium-pct take-profit are both left
+    completely unchanged either way. Both-halves and walk-forward validated
+    (+70-90%), net profitable under stress-case costs. This widens the INDEX-points
+    take-profit only -- the live premium-pct take-profit (take_profit_premium_pct)
+    was never part of the backtest (that's purely an index-points simulation) and is
+    deliberately left untouched, so a confirmed trade may still realize less than
+    the backtested number if the premium-pct check fires first; that is a
+    conservative gap, not a risk, since it can only cap gains earlier, never make a
+    losing trade worse."""
 
     @property
     def quantity(self) -> int:
@@ -287,6 +304,15 @@ class AppConfig:
     the two have never been backtested stacked together."""
     extreme_point_rule_max_wait_bars: int
 
+    rsi_confirm_widened_tp_enabled: bool
+    """Master switch for the RSI-confirm widened-TP feature (research/
+    rsi_confirm_widened_tp_study.py, Phase 2.1/3.0/3.1) -- per-instrument, actually
+    activated only where InstrumentConfig.rsi_confirm_widened_tp_points > 0 (NIFTY
+    only, so far). See that field's docstring for the full mechanism."""
+    rsi_confirm_widened_tp_checkpoint_bars: int
+    """How many 5-min candles after entry the RSI-confirm check happens -- matches
+    the backtested convention (6 candles = 30 minutes) throughout this investigation."""
+
     starting_capital: float
     """Seed value for the account capital ledger (state.py's TradeStore.get_capital),
     used only the very first time it's ever read -- capital compounds across days
@@ -336,6 +362,7 @@ class AppConfig:
                 underlying_exchange=i.get("underlying_exchange", "NSE"),
                 options_exchange=i.get("options_exchange", "NFO"),
                 min_premium_threshold=float(i.get("min_premium_threshold", 0.0)),
+                rsi_confirm_widened_tp_points=float(i.get("rsi_confirm_widened_tp_points", 0.0)),
             )
             for i in raw["instruments"]
         ]
@@ -375,6 +402,8 @@ class AppConfig:
             pullback_extended_threshold_points=_parse_positive_float(raw, "pullback_extended_threshold_points", 100.0),
             extreme_point_rule_enabled=bool(raw.get("extreme_point_rule_enabled", False)),
             extreme_point_rule_max_wait_bars=int(_parse_positive_float(raw, "extreme_point_rule_max_wait_bars", 3.0)),
+            rsi_confirm_widened_tp_enabled=bool(raw.get("rsi_confirm_widened_tp_enabled", False)),
+            rsi_confirm_widened_tp_checkpoint_bars=int(_parse_positive_float(raw, "rsi_confirm_widened_tp_checkpoint_bars", 6.0)),
             starting_capital=_parse_positive_float(raw, "starting_capital", 200000.0),
             shutdown_vm_on_exit=bool(raw.get("shutdown_vm_on_exit", False)),
             risk=RiskConfig(

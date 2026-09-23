@@ -54,6 +54,9 @@ _MIGRATION_COLUMNS = {
     "entry_iv": "REAL",
     "peak_favorable_underlying": "REAL",
     "peak_favorable_premium": "REAL",
+    "entry_rsi": "REAL",
+    "tp_widen_checked": "INTEGER NOT NULL DEFAULT 0",
+    "tp_widened_points": "REAL",
 }
 
 
@@ -93,6 +96,20 @@ class Trade:
     so pnl = (exit_price - entry_price) * quantity regardless of trade_type; a
     premium rise is always favorable. Used by the step-ladder trailing stop
     (trailing_stop_mode="premium_pct_step")."""
+    entry_rsi: Optional[float]
+    """RSI(14) on the underlying's 5-min close at entry, if enough candle history was
+    available -- the baseline the RSI-confirm widened-TP feature compares against at
+    its checkpoint (see rsi_confirm_widened_tp_enabled)."""
+    tp_widen_checked: int
+    """0 until the widened-TP checkpoint (rsi_confirm_widened_tp_checkpoint_bars candles
+    after entry) has been evaluated for this trade, 1 after -- the decision is made
+    ONCE and then memoized (see tp_widened_points), never re-evaluated every cycle."""
+    tp_widened_points: Optional[float]
+    """Set only if tp_widen_checked=1 AND RSI confirmed the trade's direction at the
+    checkpoint: the widened take-profit target (index points) to use for the rest of
+    this trade's life instead of the instrument's normal take_profit_points. None if
+    not yet checked, or checked but RSI did not confirm (normal take_profit_points
+    stays in force either way)."""
 
 
 class TradeStore:
@@ -164,6 +181,7 @@ class TradeStore:
         strike: float,
         mode: str = "LIVE",
         entry_iv: float | None = None,
+        entry_rsi: float | None = None,
     ) -> int:
         now = datetime.now()
         with self._connect() as conn:
@@ -171,8 +189,9 @@ class TradeStore:
                 """INSERT INTO trades
                    (trade_date, instrument, order_id, symbol, trade_type, token, strike,
                     entry_price, entry_underlying_price, quantity, mode, status, opened_at,
-                    entry_iv, peak_favorable_underlying, peak_favorable_premium)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?)""",
+                    entry_iv, peak_favorable_underlying, peak_favorable_premium, entry_rsi,
+                    tp_widen_checked, tp_widened_points)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?, ?, 0, NULL)""",
                 (
                     date.today().isoformat(),
                     instrument,
@@ -189,6 +208,7 @@ class TradeStore:
                     entry_iv,
                     entry_underlying_price,  # peak starts at entry -- nothing favorable has happened yet
                     entry_price,  # ditto, for the premium-based peak
+                    entry_rsi,
                 ),
             )
             return cur.lastrowid
@@ -215,6 +235,17 @@ class TradeStore:
             conn.execute(
                 "UPDATE trades SET peak_favorable_premium=? WHERE id=?",
                 (peak_favorable_premium, trade_id),
+            )
+
+    def update_tp_widen_decision(self, trade_id: int, widened_points: float | None) -> None:
+        """Records the ONE-TIME RSI-confirm widened-TP checkpoint decision for a trade:
+        widened_points is the new take-profit target (index points) if RSI confirmed, or
+        None if it didn't (normal take_profit_points stays in force). Sets
+        tp_widen_checked=1 either way so the checkpoint is never re-evaluated."""
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE trades SET tp_widen_checked=1, tp_widened_points=? WHERE id=?",
+                (widened_points, trade_id),
             )
 
     def get_open_trade(self, instrument: str) -> Optional[Trade]:

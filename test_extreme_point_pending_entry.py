@@ -50,6 +50,7 @@ def _make_engine(extreme_point_rule_enabled: bool, max_wait_bars: int = 3):
         iv_check_interval_seconds=30, momentum_exit_enabled=False, momentum_window_minutes=10,
         momentum_exit_points=60, pullback_entry_enabled=False, pullback_extended_threshold_points=100,
         extreme_point_rule_enabled=extreme_point_rule_enabled, extreme_point_rule_max_wait_bars=max_wait_bars,
+        rsi_confirm_widened_tp_enabled=False, rsi_confirm_widened_tp_checkpoint_bars=6,
         starting_capital=200000, shutdown_vm_on_exit=False,
         risk=RiskConfig(5000, 10, 10), market=None,
         historical_data=HistoricalDataConfig("FIVE_MINUTE", 5, 100,
