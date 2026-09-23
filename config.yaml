@@ -84,6 +84,19 @@ momentum_exit_points: 60
 pullback_entry_enabled: true
 pullback_extended_threshold_points: 100
 
+# Extreme Point Rule (Wilder's DMI safeguard, applied to whichever signal strategy this
+# instrument runs): don't enter on the signal candle itself -- only enter once price breaks
+# that candle's own high (BUY) / low (SELL) within extreme_point_rule_max_wait_bars candles,
+# otherwise treat it as a false/whipsaw signal and skip. Backtested on all 4 live instruments
+# and 3 distinct base strategies (EMA crossover, Keltner Channel, Donchian Channel): NIFTY
+# 1146->871 trades, 6384->10829pts (+70%); BANKNIFTY 9334->22746pts (+144%); FINNIFTY
+# 8441->11622pts (+38%); MIDCPNIFTY 9228->13266pts (+44%) -- both-halves and walk-forward
+# validated (see research/NIFTY_INDICATOR_CORRELATION_FINDINGS.md Phase 2.2/2.3/2.6/3.0),
+# still net profitable under stress-case F&O costs (Phase 3.1). Starts DISABLED -- flip to
+# true only after paper-trading review, per the standing rule to ask before any live change.
+extreme_point_rule_enabled: false
+extreme_point_rule_max_wait_bars: 3
+
 # Seed value for the account capital ledger (data/trades.db, table "account") --
 # only used the very first time it's ever read. From then on capital compounds
 # across days (each trade's pnl adds/subtracts from it); it does NOT reset to

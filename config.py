@@ -271,6 +271,22 @@ class AppConfig:
     skipped entirely rather than chased late."""
     pullback_extended_threshold_points: float
 
+    extreme_point_rule_enabled: bool
+    """Wilder's Extreme Point Rule (research/extreme_point_rule_study.py, Phase 2.2-2.6):
+    don't enter on the signal candle itself -- note its own extreme (HIGH for a BUY/CE
+    signal, LOW for a SELL/PE signal), and only actually enter once price goes on to break
+    that extreme within extreme_point_rule_max_wait_bars candles. If it never breaks within
+    the window, treat the signal as a false/whipsaw crossover and skip it entirely. Backtested
+    across all 4 live instruments (NIFTY/BANKNIFTY/FINNIFTY/MIDCPNIFTY) and 3 distinct base
+    strategies (EMA crossover, Keltner Channel, Donchian Channel): both-halves-positive at
+    every max_wait_bars value tried (1-15) on every instrument, walk-forward validated
+    (parameter chosen from past data only, tested on unseen future data) with all 12 folds
+    positive, and still net profitable under stress-case F&O costs. Applies only to the
+    immediate-entry path (a signal NOT already flagged "extended" by pullback_entry_enabled)
+    -- an extended candle's pullback wait is itself already a confirmation mechanism, and
+    the two have never been backtested stacked together."""
+    extreme_point_rule_max_wait_bars: int
+
     starting_capital: float
     """Seed value for the account capital ledger (state.py's TradeStore.get_capital),
     used only the very first time it's ever read -- capital compounds across days
@@ -357,6 +373,8 @@ class AppConfig:
             momentum_exit_points=_parse_positive_float(raw, "momentum_exit_points", 60.0),
             pullback_entry_enabled=bool(raw.get("pullback_entry_enabled", False)),
             pullback_extended_threshold_points=_parse_positive_float(raw, "pullback_extended_threshold_points", 100.0),
+            extreme_point_rule_enabled=bool(raw.get("extreme_point_rule_enabled", False)),
+            extreme_point_rule_max_wait_bars=int(_parse_positive_float(raw, "extreme_point_rule_max_wait_bars", 3.0)),
             starting_capital=_parse_positive_float(raw, "starting_capital", 200000.0),
             shutdown_vm_on_exit=bool(raw.get("shutdown_vm_on_exit", False)),
             risk=RiskConfig(

@@ -50,6 +50,7 @@ def _make_engine(min_premium_threshold: float, ltp_by_symbol: dict[str, float]):
         signal_reversal_exit_enabled=False, iv_exit_enabled=False, iv_exit_drop_pct=20,
         iv_check_interval_seconds=30, momentum_exit_enabled=False, momentum_window_minutes=10,
         momentum_exit_points=60, pullback_entry_enabled=False, pullback_extended_threshold_points=100,
+        extreme_point_rule_enabled=False, extreme_point_rule_max_wait_bars=3,
         starting_capital=200000, shutdown_vm_on_exit=False,
         risk=RiskConfig(5000, 10, 10), market=None,
         historical_data=HistoricalDataConfig("FIVE_MINUTE", 5, 100,
