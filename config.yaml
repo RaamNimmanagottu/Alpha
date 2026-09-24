@@ -37,7 +37,9 @@ target_delta: 0.5   # only used when strike_selection_mode is "delta"
 # underlying price seen since entry. Can only tighten the stop, never loosen it
 # below the original stop_loss_points level. Used only when trailing_stop_mode
 # is "points" -- kept/still valid as a fallback/rollback option, not currently active.
-trailing_stop_enabled: true
+# DISABLED 2026-09-24 (user request): no trailing stop in either mode; the static
+# stop_loss_points exit still applies. Flip back to true to re-enable.
+trailing_stop_enabled: false
 trailing_stop_activation_points: 50
 trailing_stop_distance_points: 30
 

@@ -519,7 +519,8 @@ IDFCFIRSTB, BANKBARODA. `max_trades_per_day` raised to 33 (= 11 x
 
 ## 4. Exit Rules (live-only additions, not backtested — each independently toggleable)
 
-- **Trailing stop-loss**: `trailing_stop_mode` selects one of two mechanisms
+- **Trailing stop-loss** (**DISABLED 2026-09-24**, user request --
+  `trailing_stop_enabled: false`; only the static SL applies now): `trailing_stop_mode` selects one of two mechanisms
   (mutually exclusive, global setting):
   - `"points"` (the original mechanism): once a trade moves
     `trailing_stop_activation_points` (50) in favor, SL trails
